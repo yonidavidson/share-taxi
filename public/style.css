@@ -131,6 +131,13 @@ body {
 }
 .quick button:hover { border-color: var(--accent); color: var(--accent); }
 
+.quick-picks { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.quick-picks button {
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: 999px; padding: 4px 11px; font-size: 12.5px; cursor: pointer; font-family: inherit;
+}
+.quick-picks button:hover { border-color: var(--accent); color: var(--accent); }
+
 .comment-form { display: flex; gap: 8px; margin-top: 10px; }
 .comment-input {
   flex: 1; border: 1px solid var(--line); border-radius: 10px;
@@ -149,10 +156,11 @@ body {
 /* ---------- Dialog ---------- */
 .dialog {
   border: 0; border-radius: 20px; padding: 0;
-  width: min(92vw, 460px); box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  width: min(92vw, 460px); max-height: 92dvh;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
 }
 .dialog::backdrop { background: rgba(20, 24, 36, 0.45); }
-.dialog form { padding: 22px; }
+.dialog form { padding: 22px; max-height: 92dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .dialog h2 { margin: 0 0 16px; font-size: 20px; }
 .field { margin-bottom: 13px; }
 .field label { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 5px; }

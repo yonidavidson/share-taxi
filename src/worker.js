@@ -7,8 +7,9 @@ const MAX_NOTE = 300;
 const MAX_COMMENT = 300;
 const MAX_COMMENTS = 50;
 const MAX_POSTS_PER_TOKEN = 5;
-const EXPIRE_AFTER_DEPARTURE_MS = 6 * 60 * 60 * 1000; // 6 שעות אחרי שעת היציאה
-const EXPIRE_HARD_MS = 7 * 24 * 60 * 60 * 1000; // שבוע מהפרסום
+// פוסט פג תוקף שעתיים אחרי שעת היציאה (או שבוע אחרי הפרסום — רשת ביטחון לתאריכים תקולים)
+const EXPIRE_AFTER_DEPARTURE_MS = 2 * 60 * 60 * 1000;
+const EXPIRE_HARD_MS = 7 * 24 * 60 * 60 * 1000;
 
 const ADJECTIVES = [
   "נוסע ענייני", "חבר מסלול", "שותף שקט", "מרחף קליל", "גלגל שינוע",
@@ -46,12 +47,16 @@ function isActive(post, now = Date.now()) {
     new Date(post.createdAt).getTime() + EXPIRE_HARD_MS > now;
 }
 
-async function getActivePosts(env) {
+// מנקה פוסטים שיצאו מהתוקף. רץ בכל קריאה ובקרון של 3 שעות.
+async function pruneExpired(env) {
   const posts = await loadPosts(env);
   const active = posts.filter((p) => isActive(p));
-  // נקה פוסטים שפג תוקפם רק אם באמת השתנה משהו (חוסך כתיבות KV)
   if (active.length !== posts.length) await savePosts(env, active);
   return active;
+}
+
+async function getActivePosts(env) {
+  return pruneExpired(env);
 }
 
 // ------------------------------------------------------------------
@@ -90,6 +95,12 @@ export default {
     }
     // כל שאר הבקשות — קבצים סטטיים
     return env.ASSETS.fetch(request);
+  },
+
+  // קרון: ניקוי פוסטים ישנים כל 3 שעות, שהלוח לא יתמלא זבל
+  async scheduled(event, env) {
+    const active = await pruneExpired(env);
+    console.log(`[cron] ניקוי תקופתי — ${active.length} פוסטים פעילים`);
   },
 };
 

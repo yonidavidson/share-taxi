@@ -3,24 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>מונית משותפת · רעננה</title>
-  <meta name="description" content="תיאום מוניות משותפות באזור רעננה. אנונימי, בלי הרשמה.">
+  <title>מונית משותפת · גב-ים רעננה</title>
+  <meta name="description" content="הקילומטר האחרון: תיאום מוניות משותפות בין תחנות הרכבת (רעננה דרום / הרצליה) לגב-ים רעננה. אנונימי, בלי הרשמה.">
+  <link rel="icon" href="/favicon.svg">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="header">
     <div class="wrap header-inner">
-      <h1>🚕 מונית משותפת · רעננה</h1>
-      <p class="tagline">מחפשים שירוטל? פרסמו חיפוש, התארגנו יחד, חלקו את העלות.<br>אנונימי לגמרי — בלי הרשמה ובלי פרטים אישיים.</p>
+      <h1>🚕 מונית משותפת · גב-ים רעננה</h1>
+      <p class="tagline">סוגרים את <b>הקילומטר האחרון</b> — בין תחנת הרכבת למרכז העבודה.<br>
+      מרכבת רעננה דרום או רכבת הרצליה ועד גב-ים רעננה, ובחזרה. אנונימי לגמרי, בלי הרשמה.</p>
     </div>
   </header>
 
   <main class="wrap">
     <div class="toolbar">
-      <div class="chips" id="filters" role="tablist" aria-label="סינון כיוון">
+      <div class="chips" id="filters" role="tablist" aria-label="סינון לפי תחנה">
         <button class="chip active" data-filter="all">הכל</button>
-        <button class="chip" data-filter="to">→ לרעננה</button>
-        <button class="chip" data-filter="from">← מרעננה</button>
+        <button class="chip" data-filter="raanana">🚆 רעננה דרום</button>
+        <button class="chip" data-filter="herzliya">🚆 הרצליה</button>
       </div>
       <div class="toolbar-actions">
         <button id="refresh" class="btn ghost" title="רענון">⟳</button>
@@ -32,7 +34,7 @@
   </main>
 
   <footer class="wrap footer">
-    בלי חשבונות, בלי טלפונים, בלי מידע אישי — רק כיוון, שעה ותיאום קצר. 🚕
+    סוגרים את הקילומטר האחרון בין הרכבת לעבודה 🚕 — בלי חשבונות, בלי טלפונים, בלי מידע אישי.
   </footer>
 
   <dialog id="postDialog" class="dialog">
@@ -42,19 +44,17 @@
       <div class="field">
         <label>כיוון הנסיעה</label>
         <div class="segmented" id="directionSeg">
-          <button type="button" class="seg active" data-direction="to">→ לרעננה</button>
-          <button type="button" class="seg" data-direction="from">← מרעננה</button>
+          <button type="button" class="seg active" data-direction="toG">→ לגב-ים רעננה</button>
+          <button type="button" class="seg" data-direction="fromG">מגב-ים רעננה →</button>
         </div>
       </div>
 
       <div class="field">
-        <label for="origin" id="originLabel">מאיפה יוצאים?</label>
-        <input id="origin" maxlength="120" placeholder="לדוגמה: רעננה דרום / תחנת רכבת" required>
-      </div>
-
-      <div class="field">
-        <label for="destination" id="destinationLabel">לאן נוסעים?</label>
-        <input id="destination" maxlength="120" placeholder="לדוגמה: טריסניטיס, אזור התעשייה" required>
+        <label>מאיזו תחנת רכבת?</label>
+        <div class="segmented" id="stationSeg">
+          <button type="button" class="seg active" data-station="רכבת רעננה דרום (כוכב יעקב)" title="רכבת רעננה דרום (כוכב יעקב)">רעננה דרום</button>
+          <button type="button" class="seg" data-station="רכבת הרצליה" title="רכבת הרצליה">הרצליה</button>
+        </div>
       </div>
 
       <div class="row">

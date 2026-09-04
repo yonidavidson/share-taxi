@@ -2,6 +2,15 @@
 'use strict';
 
 // ------------------------------------------------------------------
+// נקודות המסלול הקבועות: שתי תחנות רכבת ⇄ אזור תעשייה גב-ים
+// ------------------------------------------------------------------
+const GAV_YAM = 'גב-ים רעננה';
+const STATIONS = [
+  { key: 'raanana', short: 'רעננה דרום', full: 'רכבת רעננה דרום (כוכב יעקב)' },
+  { key: 'herzliya', short: 'הרצליה', full: 'רכבת הרצליה' },
+];
+
+// ------------------------------------------------------------------
 // זיהוי אנונימי — טוקן אקראי שנשמר רק בדפדפן שלך
 // ------------------------------------------------------------------
 function getToken() {
@@ -41,9 +50,12 @@ const deletePost = (postId) => api(`/api/posts/${postId}`, { method: 'DELETE' })
 // ------------------------------------------------------------------
 const state = {
   posts: [],
-  filter: 'all',
+  filter: 'all', // 'all' | מפתח תחנה
   loading: false,
 };
+
+let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
+let station = STATIONS[0].full;
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -80,13 +92,27 @@ function relTime(iso) {
   return `לפני ${Math.floor(sec / 86400)} ימים`;
 }
 
-const dirBadge = (d) => (d === 'to' ? '→ לרעננה' : '← מרעננה');
+function postStation(post) {
+  const text = `${post.origin} ${post.destination}`;
+  if (text.includes('הרצליה')) return 'herzliya';
+  if (text.includes('רעננה דרום')) return 'raanana';
+  return null;
+}
+
+function dirBadge(post) {
+  return post.destination.includes('גב-ים')
+    ? { text: '→ גב-ים רעננה', cls: 'to' }
+    : { text: 'מגב-ים רעננה →', cls: 'from' };
+}
 
 // ------------------------------------------------------------------
 // Rendering
 // ------------------------------------------------------------------
 function render() {
-  const filtered = state.posts.filter((p) => state.filter === 'all' || p.direction === state.filter);
+  const filtered = state.posts.filter((p) => {
+    if (state.filter === 'all') return true;
+    return postStation(p) === state.filter;
+  });
 
   if (state.loading) {
     list.innerHTML = '<div class="empty"><span class="big">⏳</span>טוען...</div>';
@@ -97,7 +123,7 @@ function render() {
     list.innerHTML = `
       <div class="empty">
         <span class="big">🚕</span>
-        אין כרגע חיפושי מונית פעילים${state.filter !== 'all' ? ' בכיוון הזה' : ''}.<br>
+        אין כרגע חיפושי מונית פעילים${state.filter !== 'all' ? ' מהתחנה הזו' : ''}.<br>
         היו הראשונים — לחצו על <b>«מחפשים מונית»</b> ופרסמו חיפוש!
       </div>`;
     return;
@@ -132,8 +158,9 @@ function renderCard(post) {
   card.dataset.id = post.id;
 
   const badge = el.querySelector('.dir-badge');
-  badge.textContent = dirBadge(post.direction);
-  badge.classList.add(post.direction);
+  const b = dirBadge(post);
+  badge.textContent = b.text;
+  badge.classList.add(b.cls);
 
   el.querySelector('.name').textContent = `${post.name} · ${relTime(post.createdAt)}`;
   el.querySelector('.route').innerHTML =
@@ -218,28 +245,25 @@ async function refresh() {
 }
 
 // ------------------------------------------------------------------
-// Form: direction segmented control + labels
+// Form: segmented controls (כיוון + תחנה)
 // ------------------------------------------------------------------
-let direction = 'to';
-
-function updateDirectionUI() {
-  for (const seg of document.querySelectorAll('.seg')) {
-    seg.classList.toggle('active', seg.dataset.direction === direction);
+function updateSegmented(segRoot, attr, value) {
+  for (const seg of segRoot.querySelectorAll('.seg')) {
+    seg.classList.toggle('active', seg.dataset[attr] === value);
   }
-  $('#originLabel').textContent =
-    direction === 'to' ? 'מאיפה יוצאים?' : 'מאיפה ברעננה יוצאים?';
-  $('#destinationLabel').textContent =
-    direction === 'to' ? 'לאן נוסעים? (יעד ברעננה)' : 'לאן נוסעים?';
-  $('#origin').placeholder =
-    direction === 'to' ? 'לדוגמה: רעננה דרום / תחנת רכבת' : 'לדוגמה: רעננה דרום';
-  $('#destination').placeholder =
-    direction === 'to' ? 'לדוגמה: טריסניטיס, אזור התעשייה' : 'לדוגמה: תל אביב — אזור המסחר';
 }
 
-for (const seg of document.querySelectorAll('.seg')) {
+for (const seg of document.querySelectorAll('#directionSeg .seg')) {
   seg.addEventListener('click', () => {
     direction = seg.dataset.direction;
-    updateDirectionUI();
+    updateSegmented($('#directionSeg'), 'direction', direction);
+  });
+}
+
+for (const seg of document.querySelectorAll('#stationSeg .seg')) {
+  seg.addEventListener('click', () => {
+    station = seg.dataset.station;
+    updateSegmented($('#stationSeg'), 'station', station);
   });
 }
 
@@ -248,28 +272,26 @@ for (const seg of document.querySelectorAll('.seg')) {
 // ------------------------------------------------------------------
 postForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const origin = $('#origin').value.trim();
-  const destination = $('#destination').value.trim();
   const date = $('#date').value;
   const time = $('#time').value;
 
   formError.hidden = true;
-  if (!origin || !destination) {
-    formError.textContent = 'מלאו נקודת מוצא ויעד.';
-    formError.hidden = false;
-    return;
-  }
   if (!date || !time) {
     formError.textContent = 'בחרו תאריך ושעה.';
     formError.hidden = false;
     return;
   }
 
+  // מסלול אוטומטי לפי הכיוון: תחנה ⇄ גב-ים
+  const toGavYam = direction === 'toG';
+  const origin = toGavYam ? station : GAV_YAM;
+  const destination = toGavYam ? GAV_YAM : station;
+
   const btn = postForm.querySelector('[type="submit"]');
   btn.disabled = true;
   try {
     await createPost({
-      direction,
+      direction: toGavYam ? 'to' : 'from',
       origin,
       destination,
       date,
@@ -279,8 +301,10 @@ postForm.addEventListener('submit', async (e) => {
     });
     dialog.close();
     postForm.reset();
-    direction = 'to';
-    updateDirectionUI();
+    direction = 'toG';
+    station = STATIONS[0].full;
+    updateSegmented($('#directionSeg'), 'direction', direction);
+    updateSegmented($('#stationSeg'), 'station', station);
     await refresh();
   } catch (err) {
     formError.textContent = err.message;
@@ -300,9 +324,9 @@ $('#newPost').addEventListener('click', () => {
   $('#date').max = toYMD(new Date(now.getTime() + 6 * 86400000));
   if (!$('#date').value) $('#date').value = toYMD(now);
   if (!$('#time').value) {
-    $('#time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes() + 1).padStart(2, '0')}`;
+    const t = new Date(now.getTime() + 5 * 60000); // עגול ל-5 הדקות הבאות
+    $('#time').value = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
   }
-  updateDirectionUI();
   dialog.showModal();
 });
 
