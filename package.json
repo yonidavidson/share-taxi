@@ -1,0 +1,13 @@
+{
+  "name": "share-taxi",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "kv:create": "wrangler kv namespace create SHARE_TAXI_KV"
+  },
+  "devDependencies": {
+    "wrangler": "^4.129.0"
+  }
+}

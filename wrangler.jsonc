@@ -1,0 +1,18 @@
+// wrangler.jsonc — הגדרות פריסה ל-Cloudflare Workers
+// לפני deploy ראשון: הריץ `npm run kv:create` והדבק את ה-id שיתקבל במקום ה-placeholder.
+// ה-id הזה אינו סוד — אין כאן טוקנים או מפתחות.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "share-taxi",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./public"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SHARE_TAXI_KV",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ]
+}

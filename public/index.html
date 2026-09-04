@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>מונית משותפת · רעננה</title>
+  <meta name="description" content="תיאום מוניות משותפות באזור רעננה. אנונימי, בלי הרשמה.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="wrap header-inner">
+      <h1>🚕 מונית משותפת · רעננה</h1>
+      <p class="tagline">מחפשים שירוטל? פרסמו חיפוש, התארגנו יחד, חלקו את העלות.<br>אנונימי לגמרי — בלי הרשמה ובלי פרטים אישיים.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="toolbar">
+      <div class="chips" id="filters" role="tablist" aria-label="סינון כיוון">
+        <button class="chip active" data-filter="all">הכל</button>
+        <button class="chip" data-filter="to">→ לרעננה</button>
+        <button class="chip" data-filter="from">← מרעננה</button>
+      </div>
+      <div class="toolbar-actions">
+        <button id="refresh" class="btn ghost" title="רענון">⟳</button>
+        <button id="newPost" class="btn primary">+ מחפשים מונית</button>
+      </div>
+    </div>
+
+    <div id="list" class="list" aria-live="polite"></div>
+  </main>
+
+  <footer class="wrap footer">
+    בלי חשבונות, בלי טלפונים, בלי מידע אישי — רק כיוון, שעה ותיאום קצר. 🚕
+  </footer>
+
+  <dialog id="postDialog" class="dialog">
+    <form id="postForm" method="dialog" novalidate>
+      <h2>מחפשים מונית? 🚕</h2>
+
+      <div class="field">
+        <label>כיוון הנסיעה</label>
+        <div class="segmented" id="directionSeg">
+          <button type="button" class="seg active" data-direction="to">→ לרעננה</button>
+          <button type="button" class="seg" data-direction="from">← מרעננה</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="origin" id="originLabel">מאיפה יוצאים?</label>
+        <input id="origin" maxlength="120" placeholder="לדוגמה: רעננה דרום / תחנת רכבת" required>
+      </div>
+
+      <div class="field">
+        <label for="destination" id="destinationLabel">לאן נוסעים?</label>
+        <input id="destination" maxlength="120" placeholder="לדוגמה: טריסניטיס, אזור התעשייה" required>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="date">תאריך</label>
+          <input id="date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="time">שעת יציאה</label>
+          <input id="time" type="time" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="flexible">גמישות בשעה</label>
+        <select id="flexible">
+          <option value="">מדויק</option>
+          <option value="±15 דקות">±15 דקות</option>
+          <option value="±30 דקות">±30 דקות</option>
+          <option value="גמיש, נתאים לפי השאר">גמיש, נתאים לפי השאר</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="note">הערה קצרה <span class="hint">(למשל: "ממש על הדרך", "2 מקומות", "חוזר ב-17:00")</span></label>
+        <input id="note" maxlength="300" placeholder="אופציונלי">
+      </div>
+
+      <p id="formError" class="error" hidden></p>
+
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>ביטול</button>
+        <button type="submit" class="btn primary">פרסום חיפוש</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="cardTemplate">
+    <article class="card">
+      <div class="card-head">
+        <span class="dir-badge"></span>
+        <span class="name"></span>
+      </div>
+      <div class="route"></div>
+      <div class="when"></div>
+      <p class="note" hidden></p>
+      <div class="comments"></div>
+      <div class="quick"></div>
+      <form class="comment-form">
+        <input class="comment-input" maxlength="300" placeholder="כתבו לי... (אנונימי)" required>
+        <button type="submit" class="btn primary sm">שלח</button>
+      </form>
+      <button class="btn danger-link del" hidden>מחיקת הפרסום</button>
+    </article>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
