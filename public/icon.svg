@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#141417"/>
+  <g transform="rotate(-45 256 256)">
+    <rect x="-100" y="180" width="712" height="42" fill="#fcaf17"/>
+    <rect x="-100" y="228" width="712" height="30" fill="#ffffff"/>
+    <rect x="-100" y="264" width="712" height="42" fill="#fcaf17"/>
+  </g>
+  <text x="256" y="330" font-size="260" text-anchor="middle" font-family="Apple Color Emoji, Segoe UI Emoji">🚕</text>
+</svg>

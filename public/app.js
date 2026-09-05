@@ -123,8 +123,9 @@ function render() {
     list.innerHTML = `
       <div class="empty">
         <span class="big">🚕</span>
-        אין כרגע חיפושי מונית פעילים${state.filter !== 'all' ? ' מהתחנה הזו' : ''}.<br>
-        היו הראשונים — לחצו על <b>«מחפשים מונית»</b> ופרסמו חיפוש!
+        <span class="mission">${state.filter !== 'all' ? 'אין משימות מהתחנה הזו' : 'MISSION START?'}</span><br>
+        אין כרגע חיפושי מונית פעילים.<br>
+        היו הראשונים — לחצו על <b>«מחפשים מונית»</b> ופתחו משימה חדשה!
       </div>`;
     return;
   }
@@ -352,6 +353,38 @@ function toYMD(d) {
 setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 30000);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refresh();
+});
+
+// ------------------------------------------------------------------
+// PWA — service worker + כפתור התקנה
+// ------------------------------------------------------------------
+const isSecureCtx = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+if ('serviceWorker' in navigator && isSecureCtx) {
+  navigator.serviceWorker.register('/sw.js').catch(() => { /* לא קריטי */ });
+}
+
+let deferredInstall = null;
+const installBtn = document.createElement('button');
+installBtn.className = 'btn primary install-btn';
+installBtn.textContent = '📲 התקינו את האפליקציה';
+installBtn.hidden = true;
+installBtn.addEventListener('click', async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  await deferredInstall.userChoice;
+  deferredInstall = null;
+  installBtn.hidden = true;
+});
+document.querySelector('.toolbar-actions').prepend(installBtn);
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstall = e;
+  installBtn.hidden = false;
+});
+
+window.addEventListener('appinstalled', () => {
+  installBtn.hidden = true;
 });
 
 refresh();

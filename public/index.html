@@ -6,12 +6,24 @@
   <title>מונית משותפת · גב-ים רעננה</title>
   <meta name="description" content="הקילומטר האחרון: תיאום מוניות משותפות בין תחנות הרכבת (רעננה דרום / הרצליה) לגב-ים רעננה. אנונימי, בלי הרשמה.">
   <link rel="icon" href="/favicon.svg">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#fcaf17">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="שירוטל גב-ים">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Rubik:wght@400;500;700;800&family=Secular+One&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="header">
-    <div class="wrap header-inner">
-      <h1>🚕 מונית משותפת · גב-ים רעננה</h1>
+    <div class="header-inner">
+      <span class="stars" aria-hidden="true"><span class="on">★★★</span><span class="off">★★</span></span>
+      <span class="gta-tape">SHERUT MISSIONS</span>
+      <h1>מונית משותפת<br><span class="hl">גב-ים רעננה</span></h1>
       <p class="tagline">סוגרים את <b>הקילומטר האחרון</b> — בין תחנת הרכבת למרכז העבודה.<br>
       מרכבת רעננה דרום או רכבת הרצליה ועד גב-ים רעננה, ובחזרה. אנונימי לגמרי, בלי הרשמה.</p>
     </div>
@@ -36,10 +48,12 @@
   <footer class="wrap footer">
     סוגרים את הקילומטר האחרון בין הרכבת לעבודה 🚕 — בלי חשבונות, בלי טלפונים, בלי מידע אישי.
   </footer>
-
   <dialog id="postDialog" class="dialog">
     <form id="postForm" method="dialog" novalidate>
-      <h2>מחפשים מונית? 🚕</h2>
+      <div class="dialog-title">
+        <span class="mission-tag">NEW MISSION</span>
+        <h2>מחפשים מונית? 🚕</h2>
+      </div>
 
       <div class="field">
         <label>כיוון הנסיעה</label>
