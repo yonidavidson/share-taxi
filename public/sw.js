@@ -1,5 +1,5 @@
 // sw.js — service worker בסיסי: cache-first לקבצים סטטיים, רשת בלבד ל-API
-const CACHE = "share-taxi-v1";
+const CACHE = "share-taxi-v2";
 const SHELL = ["/", "/style.css", "/app.js", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {

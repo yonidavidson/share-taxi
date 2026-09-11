@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>מונית משותפת · גב-ים רעננה</title>
-  <meta name="description" content="הקילומטר האחרון: תיאום מוניות משותפות בין תחנות הרכבת (רעננה דרום / הרצליה) לגב-ים רעננה. אנונימי, בלי הרשמה.">
+  <meta name="description" content="הקילומטר האחרון: תיאום מוניות משותפות בין תחנות הרכבת (רעננה מערב / רעננה דרום / הרצליה) לגב-ים רעננה. אנונימי, בלי הרשמה.">
   <link rel="icon" href="/favicon.svg">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#fcaf17">
@@ -25,20 +25,38 @@
       <span class="gta-tape">SHERUT MISSIONS</span>
       <h1>מונית משותפת<br><span class="hl">גב-ים רעננה</span></h1>
       <p class="tagline">סוגרים את <b>הקילומטר האחרון</b> — בין תחנת הרכבת למרכז העבודה.<br>
-      מרכבת רעננה דרום או רכבת הרצליה ועד גב-ים רעננה, ובחזרה. אנונימי לגמרי, בלי הרשמה.</p>
+      מרכבת רעננה מערב, רעננה דרום או הרצליה — אל גב-ים רעננה ובחזרה. אנונימי לגמרי, בלי הרשמה.</p>
     </div>
   </header>
 
   <main class="wrap">
+    <section id="infoPanel" class="info" hidden aria-label="לוח מידע חי">
+      <div class="info-head">
+        <span class="info-title">🛰️ לוח חי</span>
+        <button id="infoToggle" class="info-toggle" type="button" aria-expanded="true">כיווץ ▲</button>
+      </div>
+      <div id="infoStats" class="info-stats"></div>
+      <div id="infoGrid" class="info-grid" tabindex="0" role="group" aria-label="מידע חי לפי תחנות"></div>
+      <div id="infoUpdated" class="info-foot"></div>
+    </section>
+
     <div class="toolbar">
-      <div class="chips" id="filters" role="tablist" aria-label="סינון לפי תחנה">
-        <button class="chip active" data-filter="all">הכל</button>
-        <button class="chip" data-filter="raanana">🚆 רעננה דרום</button>
-        <button class="chip" data-filter="herzliya">🚆 הרצליה</button>
+      <div class="filters">
+        <div class="chips" id="dirFilters" role="group" aria-label="סינון לפי כיוון">
+          <button class="chip active" data-dir="all" aria-pressed="true">כל הכיוונים</button>
+          <button class="chip" data-dir="to" aria-pressed="false">🏢 אל גב-ים</button>
+          <button class="chip" data-dir="from" aria-pressed="false">🏠 חזרה</button>
+        </div>
+        <div class="chips" id="filters" role="group" aria-label="סינון לפי תחנה">
+          <button class="chip active" data-filter="all" aria-pressed="true">כל התחנות</button>
+          <button class="chip" data-filter="raananaSouth" aria-pressed="false">🚆 רעננה דרום</button>
+          <button class="chip" data-filter="raananaWest" aria-pressed="false">🚆 רעננה מערב</button>
+          <button class="chip" data-filter="herzliya" aria-pressed="false">🚆 הרצליה</button>
+        </div>
       </div>
       <div class="toolbar-actions">
-        <button id="refresh" class="btn ghost" title="רענון">⟳</button>
         <button id="newPost" class="btn primary">+ מחפשים מונית</button>
+        <button id="refresh" class="btn ghost" title="רענון" aria-label="רענון">⟳</button>
       </div>
     </div>
 
@@ -58,16 +76,17 @@
       <div class="field">
         <label>כיוון הנסיעה</label>
         <div class="segmented" id="directionSeg">
-          <button type="button" class="seg active" data-direction="toG">→ לגב-ים רעננה</button>
-          <button type="button" class="seg" data-direction="fromG">מגב-ים רעננה →</button>
+          <button type="button" class="seg active" data-direction="toG" aria-pressed="true">🏢 נוסעים לגב-ים</button>
+          <button type="button" class="seg" data-direction="fromG" aria-pressed="false">🏠 חוזרים מהגב-ים</button>
         </div>
       </div>
 
       <div class="field">
         <label>מאיזו תחנת רכבת?</label>
         <div class="segmented" id="stationSeg">
-          <button type="button" class="seg active" data-station="רכבת רעננה דרום (כוכב יעקב)" title="רכבת רעננה דרום (כוכב יעקב)">רעננה דרום</button>
-          <button type="button" class="seg" data-station="רכבת הרצליה" title="רכבת הרצליה">הרצליה</button>
+          <button type="button" class="seg active" data-station="raananaSouth" title="רכבת רעננה דרום" aria-pressed="true">רעננה דרום</button>
+          <button type="button" class="seg" data-station="raananaWest" title="רכבת רעננה מערב" aria-pressed="false">רעננה מערב</button>
+          <button type="button" class="seg" data-station="herzliya" title="רכבת הרצליה" aria-pressed="false">הרצליה</button>
         </div>
       </div>
 
@@ -93,7 +112,7 @@
       </div>
 
       <div class="field">
-        <label for="note">הערה קצרה <span class="hint">(למשל: "ממש על הדרך", "2 מקומות", "חוזר ב-17:00")</span></label>
+        <label for="note">הערה קצרה <span class="hint">(למשל: <bdi>"ממש על הדרך"</bdi>, <bdi>"2 מקומות"</bdi>, <bdi>"חוזר ב-17:00"</bdi>)</span></label>
         <input id="note" maxlength="300" placeholder="אופציונלי">
       </div>
 
@@ -108,8 +127,8 @@
 
   <template id="cardTemplate">
     <article class="card">
+      <div class="dir-badge"></div>
       <div class="card-head">
-        <span class="dir-badge"></span>
         <span class="name"></span>
       </div>
       <div class="route"></div>
@@ -118,7 +137,7 @@
       <div class="comments"></div>
       <div class="quick"></div>
       <form class="comment-form">
-        <input class="comment-input" maxlength="300" placeholder="כתבו לי... (אנונימי)" required>
+        <input class="comment-input" dir="rtl" maxlength="300" placeholder="כתבו לי כאן… (אנונימי)" required>
         <button type="submit" class="btn primary sm">שלח</button>
       </form>
       <button class="btn danger-link del" hidden>מחיקת הפרסום</button>
