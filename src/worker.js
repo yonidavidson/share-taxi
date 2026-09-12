@@ -33,6 +33,8 @@ const INFO_TTL_MS = 2 * 60 * 1000; // הגשת מטמון טרי עד 2 דקות
 const INFO_STALE_TTL_S = 60 * 60; // שמירת מטמון לגיבוי (stale-while-error)
 const STATIONS_CACHE_KEY = "stations_cache_v1";
 const STATIONS_CACHE_TTL_S = 24 * 60 * 60; // רשימת התחנות משתנה לעיתים רחוקות
+const HOME_CACHE_PREFIX = "home_cache_v1_";
+const HOME_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הביתה מתרעננת כל 3 דקות
 
 const ADJECTIVES = [
   "נוסע ענייני", "חבר מסלול", "שותף שקט", "מרחף קליל", "גלגל שינוע",
@@ -332,6 +334,106 @@ async function getStations(env) {
 }
 
 // ------------------------------------------------------------------
+// מתכנן "מתי בבית" — מסלולים מגב-ים הביתה דרך שלוש התחנות
+// ------------------------------------------------------------------
+// חיבור דקות לשעה עירומה (מחרוזות שעון ישראל) בלי תלות באזור זמן
+function addMinutes(dateStr, hhmm, minutes) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d, hh, mm) + minutes * 60000);
+  const p = (n) => String(n).padStart(2, "0");
+  return {
+    date: `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`,
+    hour: `${p(t.getUTCHours())}:${p(t.getUTCMinutes())}`,
+  };
+}
+
+function homeOptionFromTravel(travel, key, carMin) {
+  const trains = travel?.trains ?? [];
+  if (!trains.length) return null;
+  const departure = String(travel.departureTime);
+  const arrival = String(travel.arrivalTime);
+  const leaveBy = addMinutes(departure.slice(0, 10), departure.slice(11, 16), -(carMin + 2));
+  return {
+    stationKey: key,
+    train: trains[0].trainNumber ?? null,
+    changes: Math.max(0, trains.length - 1),
+    trainDeparture: departure.slice(11, 16),
+    departDate: departure.slice(0, 10),
+    arriveHome: arrival.slice(11, 16),
+    arriveDate: arrival.slice(0, 10),
+    leaveBy: leaveBy.hour,
+    leaveByDate: leaveBy.date,
+  };
+}
+
+async function buildHomePlan(env, homeId) {
+  const { date, hour } = israelNow();
+  const results = await Promise.allSettled(
+    Object.entries(STATION_IDS).map(async ([key, stationId]) => {
+      if (stationId === homeId) return { key, car: CAR_ESTIMATES[key] ?? null, options: [] };
+      const car = CAR_ESTIMATES[key] ?? { km: 0, min: 10 };
+      const buf = addMinutes(date, hour, car.min + 2);
+      const travels = await searchTrains(stationId, homeId, buf.date, buf.hour);
+      const options = travels
+        .map((t) => homeOptionFromTravel(t, key, car.min))
+        .filter(Boolean)
+        .filter((o) => `${o.arriveDate}T${o.arriveHome}` >= `${date}T${hour}`)
+        // הרכבת חייבת לצאת אחרי שמגיעים לתחנה (לפי חלון ההמתנה שחישבנו)
+        .filter((o) => `${o.departDate}T${o.trainDeparture}` >= `${buf.date}T${buf.hour}`)
+        .slice(0, 2);
+      return { key, car, options };
+    })
+  );
+
+  const stations = [];
+  for (const [i, r] of results.entries()) {
+    const key = Object.keys(STATION_IDS)[i];
+    if (r.status === "fulfilled") stations.push(r.value);
+    else console.error(`home plan ${key} failed:`, r.reason?.message ?? r.reason);
+  }
+
+  const all = stations
+    .flatMap((s) => s.options)
+    .sort((a, b) => `${a.arriveDate}T${a.arriveHome}`.localeCompare(`${b.arriveDate}T${b.arriveHome}`));
+  const seen = new Set();
+  const next = [];
+  for (const o of all) {
+    const k = `${o.arriveDate}T${o.arriveHome}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    next.push(o);
+    if (next.length >= 4) break;
+  }
+  return { updatedAt: Date.now(), date, hour, homeId, stations, next, best: next[0] ?? null };
+}
+
+// מטמון KV לתוכניות הביתה (לפי תחנת יעד)
+async function getHomePlan(env, homeId) {
+  const cacheKey = HOME_CACHE_PREFIX + homeId;
+  let cached = null;
+  try {
+    const raw = await env.SHARE_TAXI_KV.get(cacheKey);
+    if (raw) cached = JSON.parse(raw);
+  } catch { /* מטמון פגום — מרעננים */ }
+
+  if (cached && Date.now() - cached.at < HOME_CACHE_TTL_MS) {
+    return { plan: cached.plan, cachedAt: cached.at, stale: false };
+  }
+  try {
+    const plan = await buildHomePlan(env, homeId);
+    await env.SHARE_TAXI_KV.put(cacheKey, JSON.stringify({ at: Date.now(), plan }), {
+      expirationTtl: 3600,
+    });
+    return { plan, cachedAt: Date.now(), stale: false };
+  } catch (err) {
+    console.error("buildHomePlan failed:", err);
+    if (cached) return { plan: cached.plan, cachedAt: cached.at, stale: true };
+    return null;
+  }
+}
+
+// ------------------------------------------------------------------
 // Router
 // ------------------------------------------------------------------
 export default {
@@ -360,6 +462,15 @@ async function handleApi(request, env, url) {
   const { pathname } = url;
   const method = request.method;
   const token = clientToken(request);
+
+  // GET /api/home?to=<stationId> — מתי מגיעים הביתה דרך שלוש התחנות
+  if (method === "GET" && pathname === "/api/home") {
+    const to = Number(url.searchParams.get("to"));
+    if (!Number.isInteger(to) || to <= 0) return json({ error: "חסר יעד" }, 400);
+    const result = await getHomePlan(env, to);
+    if (!result) return json({ error: "מידע ההגעה הביתה לא זמין כרגע" }, 502);
+    return json(result);
+  }
 
   // GET /api/stations — רשימת כל התחנות (לבחירת תחנת הבית)
   if (method === "GET" && pathname === "/api/stations") {

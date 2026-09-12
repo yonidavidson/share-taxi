@@ -376,12 +376,89 @@ function renderInfo(payload) {
 }
 
 async function refreshInfo() {
+  refreshHomePlan(); // במקביל — לא תלוי בהצלחת לוח הרכבות
   try {
     const res = await fetch('/api/info');
     if (!res.ok) throw new Error(`info ${res.status}`);
     renderInfo(await res.json());
   } catch {
     if (!$('#infoPanel').dataset.loaded) $('#infoPanel').hidden = true;
+  }
+}
+
+// ------------------------------------------------------------------
+// מתכנן "מתי בבית" — מבוסס /api/home (תחנת יעד = הבית השמור)
+// ------------------------------------------------------------------
+function stationShort(key) {
+  return STATIONS.find((s) => s.key === key)?.short ?? key;
+}
+
+function renderHomePlan(plan) {
+  const wrap = $('#homePlan');
+  const frag = document.createDocumentFragment();
+
+  const head = document.createElement('div');
+  head.className = 'hp-head';
+  head.textContent = `🏠 הביתה ל${home.name}`;
+  frag.appendChild(head);
+
+  if (!plan || !plan.best) {
+    const none = document.createElement('div');
+    none.className = 'hp-none';
+    none.textContent = 'אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא.';
+    frag.appendChild(none);
+    wrap.replaceChildren(frag);
+    wrap.hidden = false;
+    wrap.dataset.loaded = '1';
+    return;
+  }
+
+  const best = plan.best;
+  const sameDay = best.arriveDate === todayYMD();
+  const bestDay = sameDay ? '' : `${shortDay(best.arriveDate)} `;
+  const main = document.createElement('div');
+  main.className = 'hp-main';
+  if (sameDay) {
+    main.innerHTML = `אם יוצאים עכשיו → בבית ב-<bdi>${best.arriveHome}</bdi>`;
+  } else {
+    main.textContent = `הרכבת הבאה הביתה: ${bestDay}${best.arriveHome}`;
+  }
+  frag.appendChild(main);
+
+  const sub = document.createElement('div');
+  sub.className = 'hp-sub';
+  sub.textContent = `צאו מגב-ים עד ${best.leaveBy} · דרך ${stationShort(best.stationKey)} (רכבת ${best.trainDeparture})` +
+    (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
+  frag.appendChild(sub);
+
+  const alts = plan.next.slice(1, 3);
+  if (alts.length) {
+    const altEl = document.createElement('div');
+    altEl.className = 'hp-alts';
+    for (const o of alts) {
+      const day = o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : '';
+      const item = document.createElement('span');
+      item.textContent = `${day}${o.arriveHome} (צאו עד ${o.leaveBy} · ${stationShort(o.stationKey)})`;
+      altEl.appendChild(item);
+    }
+    frag.appendChild(altEl);
+  }
+
+  wrap.replaceChildren(frag);
+  wrap.hidden = false;
+  wrap.dataset.loaded = '1';
+}
+
+async function refreshHomePlan() {
+  const wrap = $('#homePlan');
+  if (!home) { wrap.hidden = true; return; }
+  try {
+    const res = await fetch(`/api/home?to=${home.id}`);
+    if (!res.ok) throw new Error(`home ${res.status}`);
+    const data = await res.json();
+    renderHomePlan(data.plan);
+  } catch {
+    if (!wrap.dataset.loaded) wrap.hidden = true;
   }
 }
 
