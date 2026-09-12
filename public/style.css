@@ -237,6 +237,7 @@ body {
   cursor: pointer;
 }
 .icon-btn:hover { color: var(--gta-yellow); }
+.push-btn.on { background: var(--gta-yellow); color: #000; }
 
 /* רמז התקנה באייפון */
 .ios-hint {
@@ -437,6 +438,14 @@ body {
 .ir-tag.late { color: #ffb020; }
 .ir-tag.cancel { color: #ff6b70; }
 .ir-plat { font-style: normal; font-size: 10.5px; color: #8b8b95; font-weight: 600; }
+.ir-cd { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--teal); }
+.ir-cd.soon { color: #ffb020; }
+.section-title {
+  margin: 18px 0 6px;
+  font-family: "Secular One", sans-serif;
+  font-size: 16px;
+  color: var(--white);
+}
 .ir-sep { color: #3a3a44; }
 .ir-none { color: var(--muted); }
 .ir-time.late { color: #ffb020; }

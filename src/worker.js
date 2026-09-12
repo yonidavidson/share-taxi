@@ -1,6 +1,8 @@
 // Cloudflare Worker: API עבור אתר "מונית משותפת רעננה"
 // הנתונים נשמרים ב-Cloudflare KV (חינם). אין מידע אישי — רק טוקן אנונימי אקראי לכל דפדפן.
 
+import { buildPushPayload } from "@block65/webcrypto-web-push";
+
 const POSTS_KEY = "posts";
 const MAX_TEXT = 120;
 const MAX_NOTE = 300;
@@ -37,6 +39,80 @@ const HOME_CACHE_PREFIX = "home_cache_v1_";
 const HOME_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הביתה מתרעננת כל 3 דקות
 const WORK_CACHE_PREFIX = "work_cache_v1_";
 const WORK_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הבוקר מתרעננת כל 3 דקות
+
+// ------------------------------------------------------------------
+// 🔔 התראות Push — מנויים נשמרים ב-KV אחד; שליחה דרך Web Push (VAPID)
+// ------------------------------------------------------------------
+const PUSH_SUBS_KEY = "push_subs_v1";
+const MAX_PUSH_SUBS = 300;
+const VAPID_SUBJECT = "https://share-taxi.yonidavidson-dev.workers.dev";
+
+async function loadPushSubs(env) {
+  try {
+    const raw = await env.SHARE_TAXI_KV.get(PUSH_SUBS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+async function savePushSubs(env, subs) {
+  await env.SHARE_TAXI_KV.put(PUSH_SUBS_KEY, JSON.stringify(subs.slice(-MAX_PUSH_SUBS)));
+}
+
+async function sendPush(env, sub, data) {
+  const vapid = {
+    subject: VAPID_SUBJECT,
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+  };
+  if (!vapid.publicKey || !vapid.privateKey) return { ok: false, gone: false };
+  const req = await buildPushPayload({ data, options: { ttl: 3600 } }, sub.subscription, vapid);
+  const { "content-length": _cl, ...headers } = req.headers;
+  const res = await fetch(sub.subscription.endpoint, {
+    method: req.method,
+    headers,
+    body: req.body,
+  });
+  if (res.status === 404 || res.status === 410) return { ok: false, gone: true };
+  return { ok: res.ok, gone: false };
+}
+
+async function notifySubs(env, targets, data) {
+  if (!targets.length) return;
+  const results = await Promise.allSettled(targets.map((s) => sendPush(env, s, data)));
+  const dead = new Set();
+  for (const [i, r] of results.entries()) {
+    if (r.status === "fulfilled" && r.value.gone) dead.add(targets[i].subscription.endpoint);
+  }
+  if (dead.size) {
+    const subs = await loadPushSubs(env);
+    await savePushSubs(env, subs.filter((s) => !dead.has(s.subscription?.endpoint)));
+  }
+}
+
+async function notifyNewPost(env, post) {
+  const subs = await loadPushSubs(env);
+  const targets = subs.filter((s) =>
+    s.token !== post.token && (s.direction === post.direction || s.direction === "both"));
+  const where = post.direction === "from" ? "הביתה" : "לעבודה";
+  await notifySubs(env, targets, {
+    title: `🚕 מישהו מחפש מונית ${where}`,
+    body: `${post.origin} ← ${post.destination} · ${post.time}${post.note ? ` · ${post.note}` : ""}`,
+    url: "/",
+  });
+}
+
+async function notifyNewComment(env, post, comment) {
+  const subs = await loadPushSubs(env);
+  const targets = subs.filter((s) => s.token === post.token && s.token !== comment.token);
+  await notifySubs(env, targets, {
+    title: "💬 הגיבו לנסיעה שלך",
+    body: `${comment.name}: ${comment.text}`,
+    url: "/",
+  });
+}
 
 // ------------------------------------------------------------------
 // זמני נסיעה ברכב/מונית — תנועה בזמן אמת מ-TomTom (אם הוגדר מפתח),
@@ -719,11 +795,11 @@ async function getWorkPlan(env, homeId) {
 // Router
 // ------------------------------------------------------------------
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
       try {
-        return await handleApi(request, env, url);
+        return await handleApi(request, env, url, ctx);
       } catch (err) {
         console.error(err);
         return json({ error: "שגיאת שרת" }, 500);
@@ -740,10 +816,62 @@ export default {
   },
 };
 
-async function handleApi(request, env, url) {
+async function handleApi(request, env, url, ctx) {
   const { pathname } = url;
   const method = request.method;
   const token = clientToken(request);
+
+  // GET /api/health — בדיקת חיים (ל-uptime monitor)
+  if (method === "GET" && pathname === "/api/health") {
+    let infoAgeSec = null;
+    try {
+      const raw = await env.SHARE_TAXI_KV.get(INFO_CACHE_KEY);
+      const cached = raw ? JSON.parse(raw) : null;
+      if (cached?.at) infoAgeSec = Math.round((Date.now() - cached.at) / 1000);
+    } catch { /* לא קריטי */ }
+    return json({ ok: true, now: Date.now(), infoAgeSec });
+  }
+
+  // GET /api/push/key — המפתח הציבורי של VAPID לרישום התראות
+  if (method === "GET" && pathname === "/api/push/key") {
+    return json({ key: env.VAPID_PUBLIC_KEY ?? null });
+  }
+
+  // POST /api/push/subscribe — רישום מנוי התראות (עם הכיוון שלי)
+  if (method === "POST" && pathname === "/api/push/subscribe") {
+    if (!token) return json({ error: "חסר זיהוי אנונימי" }, 400);
+    const body = await readJson(request);
+    const sub = body?.subscription;
+    if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
+      return json({ error: "מנוי לא תקין" }, 400);
+    }
+    const direction = body?.direction === "from" ? "from" : "to";
+    const subs = (await loadPushSubs(env)).filter((s) => s.subscription?.endpoint !== sub.endpoint);
+    subs.push({
+      token,
+      direction,
+      subscription: {
+        endpoint: sub.endpoint,
+        expirationTime: sub.expirationTime ?? null,
+        keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+      },
+      at: Date.now(),
+    });
+    await savePushSubs(env, subs);
+    return json({ ok: true });
+  }
+
+  // DELETE /api/push/subscribe — ביטול מנוי (לפי endpoint או לפי הטוקן שלי)
+  if (method === "DELETE" && pathname === "/api/push/subscribe") {
+    const body = await readJson(request);
+    const endpoint = body?.endpoint;
+    const subs = await loadPushSubs(env);
+    const next = endpoint
+      ? subs.filter((s) => s.subscription?.endpoint !== endpoint)
+      : subs.filter((s) => s.token !== token);
+    await savePushSubs(env, next);
+    return json({ ok: true });
+  }
 
   // GET /api/work?from=<stationId> — מסלול הבוקר: מהבית לעבודה
   if (method === "GET" && pathname === "/api/work") {
@@ -814,6 +942,7 @@ async function handleApi(request, env, url) {
     };
     posts.push(post);
     await savePosts(env, posts);
+    if (ctx) ctx.waitUntil(notifyNewPost(env, post));
     return json({ post }, 201);
   }
 
@@ -834,6 +963,7 @@ async function handleApi(request, env, url) {
     const comment = { id: id(), text, name: nameForToken(token), token, createdAt: new Date().toISOString() };
     post.comments.push(comment);
     await savePosts(env, posts);
+    if (ctx) ctx.waitUntil(notifyNewComment(env, post, comment));
     return json({ comment }, 201);
   }
 

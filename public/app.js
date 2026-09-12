@@ -187,7 +187,7 @@ function postStation(post) {
 function dirBadge(post) {
   return post.direction === 'from'
     ? { text: '🏠 חוזרים הביתה', cls: 'from' }
-    : { text: '🏢 נוסעים לגב-ים', cls: 'to' };
+    : { text: '🏢 נוסעים לעבודה', cls: 'to' };
 }
 
 // ברירת מחדל של הכיוון לפי השעה ביום (שעון ישראל): עד 12:00 — נוסעים לעבודה; אחרי — חוזרים הביתה
@@ -453,6 +453,15 @@ function trainTime(t, showPlatform = false) {
     p.textContent = `רצ׳ ${t.platform}`;
     wrap.appendChild(p);
   }
+  if (showPlatform && !t.cancelled) {
+    const mins = minsUntil(t.date, t.time);
+    if (mins != null && mins <= 180) {
+      const cd = document.createElement('i');
+      cd.className = 'ir-cd' + (mins <= 7 ? ' soon' : '');
+      cd.textContent = mins <= 1 ? 'עכשיו' : `בעוד ${mins}׳`;
+      wrap.appendChild(cd);
+    }
+  }
   return wrap;
 }
 
@@ -590,6 +599,7 @@ function setDirection(dir) {
     seg.setAttribute('aria-pressed', String(active));
   }
   $('#myDirSeg').dataset.dir = state.dir;
+  if (typeof syncPushPrefs === 'function') syncPushPrefs();
   renderHero();
   render();
 }
@@ -1173,6 +1183,87 @@ if (isIOS && !isStandalone && !localStorage.getItem('st_ios_hint')) {
   });
   const hero = document.querySelector('.hero');
   if (hero) hero.after(hint);
+}
+
+// ------------------------------------------------------------------
+// 🔔 התראות Push — נסיעות מתאימות + תגובות אליי
+// ------------------------------------------------------------------
+const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && isSecureCtx;
+const pushBtn = document.createElement('button');
+pushBtn.className = 'icon-btn push-btn';
+pushBtn.textContent = '🔕';
+pushBtn.title = 'הפעלת התראות על נסיעות מתאימות';
+pushBtn.setAttribute('aria-label', 'התראות');
+pushBtn.hidden = true;
+document.querySelector('.info-head-actions').prepend(pushBtn);
+
+let pushSub = null;
+
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+function updatePushBtn() {
+  if (!pushSupported) return;
+  pushBtn.hidden = false;
+  pushBtn.textContent = pushSub ? '🔔' : '🔕';
+  pushBtn.classList.toggle('on', !!pushSub);
+  pushBtn.title = pushSub
+    ? `התראות פעילות ${state.dir === 'from' ? 'לכיוון הביתה' : 'לכיוון העבודה'} — לחיצה לביטול`
+    : 'הפעלת התראות על נסיעות מתאימות';
+}
+
+async function syncPushPrefs() {
+  if (!pushSub) return;
+  try {
+    await api('/api/push/subscribe', {
+      method: 'POST',
+      body: { subscription: pushSub.toJSON(), direction: state.dir },
+    });
+  } catch { /* לא קריטי */ }
+}
+
+pushBtn.addEventListener('click', async () => {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (pushSub) {
+      const endpoint = pushSub.endpoint;
+      await pushSub.unsubscribe();
+      pushSub = null;
+      updatePushBtn();
+      await api('/api/push/subscribe', { method: 'DELETE', body: { endpoint } });
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      alert('ההתראות חסומות בדפדפן — אפשר לאשר אותן בהגדרות האתר.');
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return;
+    const { key } = await fetch('/api/push/key').then((r) => r.json());
+    if (!key) throw new Error('אין מפתח התראות');
+    pushSub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(key),
+    });
+    await api('/api/push/subscribe', {
+      method: 'POST',
+      body: { subscription: pushSub.toJSON(), direction: state.dir },
+    });
+    updatePushBtn();
+    alert('🔔 התראות הופעלו — נעדכן אותך על נסיעות מתאימות ועל תגובות.');
+  } catch (err) {
+    alert('לא הצלחנו להפעיל התראות: ' + (err?.message || 'שגיאה'));
+  }
+});
+
+if (pushSupported) {
+  navigator.serviceWorker.ready
+    .then((reg) => reg.pushManager.getSubscription())
+    .then((sub) => { pushSub = sub; updatePushBtn(); })
+    .catch(() => { /* לא קריטי */ });
 }
 
 // ------------------------------------------------------------------
