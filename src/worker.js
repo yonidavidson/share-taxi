@@ -447,7 +447,7 @@ function addMinutes(dateStr, hhmm, minutes) {
   };
 }
 
-function homeOptionFromTravel(travel, key, carMin) {
+function homeOptionFromTravel(travel, key, carMin, nameById) {
   const trains = travel?.trains ?? [];
   if (!trains.length) return null;
   const departure = String(travel.departureTime);
@@ -463,12 +463,45 @@ function homeOptionFromTravel(travel, key, carMin) {
     arriveDate: arrival.slice(0, 10),
     leaveBy: leaveBy.hour,
     leaveByDate: leaveBy.date,
+    ...legInfo(travel, nameById),
   };
+}
+
+// רציף עלייה בתחנת המוצא + פרטי החלפה (תחנה, רציפים, שעת הרכבת המחברת)
+function legInfo(travel, nameById) {
+  const trains = travel?.trains ?? [];
+  const first = trains[0];
+  if (!first) return {};
+  const out = { boardPlatform: first.originPlatform > 0 ? first.originPlatform : null };
+  if (trains.length > 1) {
+    const second = trains[1];
+    const stationId = first.destinationStation;
+    out.transfer = {
+      stationId,
+      stationName: nameById?.[stationId] ?? null,
+      arrivePlatform: first.destPlatform > 0 ? first.destPlatform : null,
+      departPlatform: second.originPlatform > 0 ? second.originPlatform : null,
+      departTime: String(second.departureTime).slice(11, 16),
+      train: second.trainNumber ?? null,
+    };
+  }
+  return out;
+}
+
+// מיפוי מזהה תחנה לשם (מטמון התחנות)
+async function stationNameMap(env) {
+  try {
+    const stations = await getStations(env);
+    return Object.fromEntries(stations.map((s) => [s.id, s.name]));
+  } catch (err) {
+    console.error("station names failed:", err);
+    return {};
+  }
 }
 
 async function buildHomePlan(env, homeId) {
   const { date, hour } = israelNow();
-  const cars = await getCarEstimates(env);
+  const [cars, nameById] = await Promise.all([getCarEstimates(env), stationNameMap(env)]);
   const results = await Promise.allSettled(
     Object.entries(STATION_IDS).map(async ([key, stationId]) => {
       if (stationId === homeId) return { key, car: cars[key] ?? null, options: [] };
@@ -476,7 +509,7 @@ async function buildHomePlan(env, homeId) {
       const buf = addMinutes(date, hour, car.min + 2);
       const travels = await searchTrains(stationId, homeId, buf.date, buf.hour);
       const options = travels
-        .map((t) => homeOptionFromTravel(t, key, car.min))
+        .map((t) => homeOptionFromTravel(t, key, car.min, nameById))
         .filter(Boolean)
         .filter((o) => `${o.arriveDate}T${o.arriveHome}` >= `${date}T${hour}`)
         // הרכבת חייבת לצאת אחרי שמגיעים לתחנה (לפי חלון ההמתנה שחישבנו)
@@ -536,7 +569,7 @@ async function getHomePlan(env, homeId) {
 // ------------------------------------------------------------------
 // מתכנן בוקר — מהבית לעבודה: רכבות מתחנת הבית אל שלוש התחנות
 // ------------------------------------------------------------------
-function workOptionFromTravel(travel, key, carMin) {
+function workOptionFromTravel(travel, key, carMin, nameById) {
   const trains = travel?.trains ?? [];
   if (!trains.length) return null;
   const dep = String(travel.departureTime);
@@ -552,19 +585,20 @@ function workOptionFromTravel(travel, key, carMin) {
     arriveStationDate: arr.slice(0, 10),
     arriveGav: gav.hour,
     arriveGavDate: gav.date,
+    ...legInfo(travel, nameById),
   };
 }
 
 async function buildWorkPlan(env, homeId) {
   const { date, hour } = israelNow();
-  const cars = await getCarEstimates(env);
+  const [cars, nameById] = await Promise.all([getCarEstimates(env), stationNameMap(env)]);
   const results = await Promise.allSettled(
     Object.entries(STATION_IDS).map(async ([key, stationId]) => {
       if (stationId === homeId) return { key, car: cars[key] ?? null, options: [] };
       const car = cars[key] ?? { km: 0, min: 10 };
       const travels = await searchTrains(homeId, stationId, date, hour);
       const options = travels
-        .map((t) => workOptionFromTravel(t, key, car.min))
+        .map((t) => workOptionFromTravel(t, key, car.min, nameById))
         .filter(Boolean)
         .filter((o) => `${o.depDate}T${o.depHome}` >= `${date}T${hour}`)
         .filter((o) => `${o.arriveGavDate}T${o.arriveGav}` >= `${date}T${hour}`)

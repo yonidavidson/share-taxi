@@ -437,7 +437,28 @@ const big = (html) => heroEl('hero-big', html);
 const doLine = (html) => heroEl('hero-do', html);
 const detail = (text) => { const d = heroEl('hero-detail'); d.textContent = text; return d; };
 const altLine = (text) => { const d = heroEl('hero-alts'); d.textContent = text; return d; };
-const optLine = (text) => { const d = heroEl('hero-opt'); d.textContent = text; return d; };
+const optSub = (text) => { const d = heroEl('hero-opt-sub'); d.textContent = text; return d; };
+
+function transferText(t) {
+  const name = (t.stationName ?? '').split(' - ')[0];
+  const parts = [];
+  if (t.arrivePlatform) parts.push(`יורדים ברציף ${t.arrivePlatform}`);
+  if (t.departPlatform) parts.push(`עולים ברציף ${t.departPlatform}`);
+  return `החלפה ב${name || 'תחנת מעבר'}` +
+    (parts.length ? ` · ${parts.join(' · ')}` : '') +
+    (t.departTime ? ` · הרכבת ב-${t.departTime}` : '');
+}
+
+function optBlock(prefix, mainText, transfer) {
+  const wrapEl = document.createElement('div');
+  wrapEl.className = 'hero-opt';
+  const main = document.createElement('div');
+  main.className = 'hero-opt-main';
+  main.textContent = prefix + mainText;
+  wrapEl.appendChild(main);
+  if (transfer) wrapEl.appendChild(optSub(transferText(transfer)));
+  return wrapEl;
+}
 
 // כל התחנות עם אפשרות — מסודרות לפי זמן ההגעה ליעד (גב-ים / הבית)
 function heroStationRows(plan) {
@@ -449,6 +470,15 @@ function heroStationRows(plan) {
     : `${o.arriveGavDate}T${o.arriveGav}`;
   rows.sort((a, b) => arriveKey(a.o).localeCompare(arriveKey(b.o)));
   return rows;
+}
+
+// חתימת תוכן לאפשרות — לאנימציה רק כשמשהו משתנה
+function oSig(o) {
+  return [
+    o.depHome ?? o.trainDeparture ?? '', o.arriveStation ?? o.arriveHome ?? '',
+    o.arriveGav ?? '', o.leaveBy ?? '', o.boardPlatform ?? '',
+    o.transfer ? `${o.transfer.stationId}:${o.transfer.arrivePlatform}:${o.transfer.departPlatform}:${o.transfer.departTime}` : '',
+  ].join('|');
 }
 
 function renderHero() {
@@ -474,22 +504,25 @@ function renderHero() {
       const day = best.depDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.depDate)}</span> ` : '';
       const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
       const later = state.workPlan.next.slice(1, 3).map((o) => o.depHome).join(' · ');
-      sig = `to/${best.depDate}T${best.depHome}/${best.stationKey}/${best.arriveStation}/${best.arriveGav}/${best.changes}/` +
-        rows.map((r) => `${r.key}${r.o.arriveStation}${r.o.arriveGav}${r.o.depHome}`).join('-') + `/${later}`;
+      const homeShort = home.name.split(' - ')[0];
+      sig = `to/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
       hasData = true;
       render = () => {
         el.appendChild(big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`));
         el.appendChild(doLine(`🏢 בגב-ים ≈<b><bdi>${gavDay}${best.arriveGav}</bdi></b>`));
-        el.appendChild(detail(`דרך ${stationShort(best.stationKey)} · מגיע ${best.arriveStation}` +
-          (carMin ? ` · 🚕 ~${carMin} דק׳` : '') +
-          (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        el.appendChild(detail((best.boardPlatform ? `רציף ${best.boardPlatform} ב${homeShort} · ` : '') +
+          (best.transfer ? '' : `דרך ${stationShort(best.stationKey)} · `) +
+          `מגיע ${best.arriveStation}` +
+          (carMin ? ` · 🚕 ~${carMin} דק׳` : '')));
+        if (best.transfer) el.appendChild(optSub(transferText(best.transfer)));
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
-          el.appendChild(optLine(`גם דרך ${stationShort(r.key)}: ` +
+          el.appendChild(optBlock(`גם דרך ${stationShort(r.key)}: `,
             (r.o.depHome !== best.depHome ? `רכבת ${r.o.depHome} · ` : '') +
             `מגיע ${r.o.arriveStation}` +
             (r.car?.min ? ` · 🚕 ~${r.car.min} דק׳` : '') +
-            ` · בגב-ים ${r.o.arriveGav}`));
+            ` · בגב-ים ${r.o.arriveGav}`,
+            r.o.transfer));
         }
         if (later) el.appendChild(altLine('עוד מהבית: ' + later));
       };
@@ -510,17 +543,21 @@ function renderHero() {
       const homeShort = home.name.split(' - ')[0];
       const day = best.arriveDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.arriveDate)}</span> ` : '';
       const later = state.homePlan.next.slice(1, 3).map((o) => o.arriveHome).join(' · ');
-      sig = `from/${best.arriveDate}T${best.arriveHome}/${best.leaveBy}/${best.trainDeparture}/${best.stationKey}/${best.changes}/` +
-        rows.map((r) => `${r.key}${r.o.arriveHome}${r.o.leaveBy}${r.o.trainDeparture}`).join('-') + `/${later}`;
+      sig = `from/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
       hasData = true;
       render = () => {
         el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
         el.appendChild(doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`));
-        el.appendChild(detail(`🚆 ${best.trainDeparture} · ${stationShort(best.stationKey)} → ${homeShort}` +
-          (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        el.appendChild(detail(`🚆 ${best.trainDeparture}` +
+          (best.boardPlatform ? ` · רציף ${best.boardPlatform}` : '') +
+          ` · ${stationShort(best.stationKey)} → ${homeShort}` +
+          (best.transfer ? '' : ' · ישיר')));
+        if (best.transfer) el.appendChild(optSub(transferText(best.transfer)));
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
-          el.appendChild(optLine(`גם דרך ${stationShort(r.key)}: רכבת ${r.o.trainDeparture} · בבית ${r.o.arriveHome} (צאו עד ${r.o.leaveBy})`));
+          el.appendChild(optBlock(`גם דרך ${stationShort(r.key)}: `,
+            `רכבת ${r.o.trainDeparture} · בבית ${r.o.arriveHome} (צאו עד ${r.o.leaveBy})`,
+            r.o.transfer));
         }
         if (later) el.appendChild(altLine('עוד: ' + later));
       };
