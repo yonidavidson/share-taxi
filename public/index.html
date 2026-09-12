@@ -30,9 +30,12 @@
 
   <main class="wrap">
     <section class="hero" aria-label="הכיוון שלי">
-      <div class="segmented hero-dir" id="myDirSeg" role="group" aria-label="הכיוון שלי">
-        <button type="button" class="seg active" data-direction="toG" aria-pressed="true">🏢 נוסעים לגב-ים</button>
-        <button type="button" class="seg" data-direction="fromG" aria-pressed="false">🏠 חוזרים הביתה</button>
+      <div class="hero-top">
+        <div class="segmented hero-dir" id="myDirSeg" data-dir="to" role="group" aria-label="הכיוון שלי">
+          <button type="button" class="seg active" data-direction="toG" aria-pressed="true" title="נוסעים לגב-ים">🏢 לעבודה</button>
+          <button type="button" class="seg" data-direction="fromG" aria-pressed="false" title="חוזרים הביתה">🏠 הביתה</button>
+        </div>
+        <button id="homeEdit" class="hero-edit" type="button" aria-label="שינוי תחנת הבית" title="שינוי תחנת הבית" hidden>✎</button>
       </div>
       <div id="heroLine" class="hero-line"></div>
       <button id="homeBar" class="home-bar" type="button">

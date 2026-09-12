@@ -65,6 +65,7 @@ const state = {
   info: null, // תגובת /api/info האחרונה (עבור שורת ה-hero)
   homePlan: null, // תוכנית "מתי בבית" האחרונה
   workPlan: null, // תוכנית הבוקר (מהבית לעבודה) האחרונה
+  heroSig: null, // חתימת התוכן של כרטיס ה-hero (לאנימציה רק כשמשתנה)
 };
 
 let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
@@ -421,92 +422,93 @@ function setDirection(dir) {
     seg.classList.toggle('active', active);
     seg.setAttribute('aria-pressed', String(active));
   }
+  $('#myDirSeg').dataset.dir = state.dir;
   renderHero();
   render();
 }
 
+function heroEl(cls, html) {
+  const d = document.createElement('div');
+  d.className = cls;
+  if (html !== undefined) d.innerHTML = html;
+  return d;
+}
+const big = (html) => heroEl('hero-big', html);
+const doLine = (html) => heroEl('hero-do', html);
+const detail = (text) => { const d = heroEl('hero-detail'); d.textContent = text; return d; };
+const altLine = (text) => { const d = heroEl('hero-alts'); d.textContent = text; return d; };
+
 function renderHero() {
   const el = $('#heroLine');
+  let sig;
+  let render;
+  let hasData = false;
 
   if (state.dir === 'to') {
     if (!home) {
-      el.textContent = '🏠 הגדירו תחנת בית — ונחשב את הדרך מהבית לעבודה';
-      return;
+      sig = 'to/nohome';
+      render = () => { el.textContent = '🏠 הגדירו תחנת בית — ונחשב את הדרך מהבית לעבודה'; };
+    } else if (!state.workPlan) {
+      sig = 'to/loading';
+      render = () => { el.textContent = '🚆 מחשבים את הדרך מהבית…'; };
+    } else if (!state.workPlan.best) {
+      sig = 'to/none';
+      render = () => { el.textContent = '🚆 אין רכבות מתחנת הבית כרגע — נבדוק שוב בעדכון הבא'; };
+    } else {
+      const best = state.workPlan.best;
+      const carMin = state.workPlan.stations.find((s) => s.key === best.stationKey)?.car?.min;
+      const day = best.depDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.depDate)}</span> ` : '';
+      const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
+      const later = state.workPlan.next.slice(1, 3).map((o) => o.depHome).join(' · ');
+      sig = `to/${best.depDate}T${best.depHome}/${best.stationKey}/${best.arriveStation}/${best.arriveGav}/${best.changes}/${later}`;
+      hasData = true;
+      render = () => {
+        el.appendChild(big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`));
+        el.appendChild(doLine(`🏢 בגב-ים ≈<b><bdi>${gavDay}${best.arriveGav}</bdi></b>`));
+        el.appendChild(detail(`→ ${stationShort(best.stationKey)} ${best.arriveStation}` +
+          (carMin ? ` · 🚕 ~${carMin} דק׳ משם` : '') +
+          (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        if (later) el.appendChild(altLine('עוד מהבית: ' + later));
+      };
     }
-    const wp = state.workPlan;
-    if (!wp) { el.textContent = '🚆 מחשבים את הדרך מהבית…'; return; }
-    if (!wp.best) { el.textContent = '🚆 אין רכבות מתחנת הבית כרגע — נבדוק שוב בעדכון הבא'; return; }
-
-    const best = wp.best;
-    const dayD = best.depDate !== todayYMD() ? `${shortDay(best.depDate)} ` : '';
-    el.replaceChildren();
-
-    const main = document.createElement('div');
-    main.className = 'hero-main';
-    main.textContent = `רכבת ${dayD}${best.depHome} מ${home.name} → ${stationShort(best.stationKey)} ${best.arriveStation}`;
-    el.appendChild(main);
-
-    const carMin = wp.stations.find((s) => s.key === best.stationKey)?.car?.min;
-    const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
-    const sub = document.createElement('div');
-    sub.className = 'hero-sub';
-    sub.textContent = (carMin ? `🚕 ~${carMin} דק׳ משם · ` : '') +
-      `בגב-ים ≈${gavDay}${best.arriveGav}` +
-      (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
-    el.appendChild(sub);
-
-    const alts = wp.next.slice(1, 3);
-    if (alts.length) {
-      const alt = document.createElement('div');
-      alt.className = 'hero-alts';
-      alt.textContent = 'בהמשך: ' + alts.map((o) => {
-        const d = o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : '';
-        return `${d}${o.depHome} (בגב-ים ≈${o.arriveGav})`;
-      }).join(' · ');
-      el.appendChild(alt);
-    }
-    return;
-  }
-
-  // חוזרים הביתה
-  if (!home) {
-    el.textContent = '🏠 בחרו את תחנת הבית — ונחשב מתי תגיעו הביתה';
-    return;
-  }
-  const plan = state.homePlan;
-  if (!plan) { el.textContent = '🏠 מחשבים מתי תגיעו הביתה…'; return; }
-  if (!plan.best) { el.textContent = '🏠 אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא'; return; }
-
-  const best = plan.best;
-  const sameDay = best.arriveDate === todayYMD();
-  const day = sameDay ? '' : `${shortDay(best.arriveDate)} `;
-  el.replaceChildren();
-
-  const main = document.createElement('div');
-  main.className = 'hero-main';
-  if (sameDay) {
-    main.innerHTML = `אם יוצאים עכשיו → בבית ב-<bdi>${best.arriveHome}</bdi>`;
   } else {
-    main.textContent = `הרכבת הבאה הביתה: ${day}${best.arriveHome}`;
+    if (!home) {
+      sig = 'from/nohome';
+      render = () => { el.textContent = '🏠 בחרו את תחנת הבית — ונחשב מתי תגיעו הביתה'; };
+    } else if (!state.homePlan) {
+      sig = 'from/loading';
+      render = () => { el.textContent = '🏠 מחשבים מתי תגיעו הביתה…'; };
+    } else if (!state.homePlan.best) {
+      sig = 'from/none';
+      render = () => { el.textContent = '🏠 אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא'; };
+    } else {
+      const best = state.homePlan.best;
+      const homeShort = home.name.split(' - ')[0];
+      const day = best.arriveDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.arriveDate)}</span> ` : '';
+      const later = state.homePlan.next.slice(1, 3).map((o) => o.arriveHome).join(' · ');
+      sig = `from/${best.arriveDate}T${best.arriveHome}/${best.leaveBy}/${best.trainDeparture}/${best.stationKey}/${best.changes}/${later}`;
+      hasData = true;
+      render = () => {
+        el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
+        el.appendChild(doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`));
+        el.appendChild(detail(`🚆 ${best.trainDeparture} · ${stationShort(best.stationKey)} → ${homeShort}` +
+          (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        if (later) el.appendChild(altLine('עוד: ' + later));
+      };
+    }
   }
-  el.appendChild(main);
 
-  const homeShort = home.name.split(' - ')[0];
-  const sub = document.createElement('div');
-  sub.className = 'hero-sub';
-  sub.textContent = `צאו מגב-ים עד ${best.leaveBy} · רכבת ${best.trainDeparture} מ${stationShort(best.stationKey)} → ${homeShort}` +
-    (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
-  el.appendChild(sub);
-
-  const alts = plan.next.slice(1, 3);
-  if (alts.length) {
-    const alt = document.createElement('div');
-    alt.className = 'hero-alts';
-    alt.textContent = 'בהמשך: ' + alts.map((o) => {
-      const d = o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : '';
-      return `${d}${o.arriveHome} (צאו עד ${o.leaveBy})`;
-    }).join(' · ');
-    el.appendChild(alt);
+  el.classList.toggle('loading', sig.endsWith('/loading'));
+  if (sig === state.heroSig) return;
+  state.heroSig = sig;
+  el.replaceChildren();
+  render();
+  if (hasData) {
+    requestAnimationFrame(() => {
+      el.querySelectorAll('.hero-time').forEach((x) => x.classList.add('pop'));
+      const chip = el.querySelector('.hero-do b');
+      if (chip) chip.classList.add('pop');
+    });
   }
 }
 
@@ -563,13 +565,15 @@ let stationsCache = null;
 function renderHomeBar() {
   const bar = $('#homeBar');
   if (home) {
-    bar.classList.add('set');
-    $('#homeLabel').textContent = `הביתה: ${home.name}`;
-    bar.title = 'שינוי תחנת הבית';
+    // אין שורת הגדרה שלמה — שינוי הבית זמין בעיפרון הקטן שלצד המתג
+    bar.hidden = true;
+    $('#homeEdit').hidden = false;
   } else {
+    bar.hidden = false;
     bar.classList.remove('set');
     $('#homeLabel').textContent = 'בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה';
     bar.title = '';
+    $('#homeEdit').hidden = true;
   }
 }
 
@@ -625,6 +629,8 @@ $('#homeBar').addEventListener('click', async () => {
     $('#homeList').innerHTML = '<div class="home-empty">טעינת התחנות נכשלה — נסו שוב</div>';
   }
 });
+
+$('#homeEdit').addEventListener('click', () => $('#homeBar').click());
 
 $('#homeSearch').addEventListener('input', (e) => renderHomeList(e.target.value));
 $('#homeForm').addEventListener('submit', (e) => e.preventDefault());
