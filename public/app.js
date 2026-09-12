@@ -203,6 +203,8 @@ function defaultDirection() {
 // ------------------------------------------------------------------
 // Rendering
 // ------------------------------------------------------------------
+const seenPostIds = new Set(); // פוסטים שכבר הוצגו — לאנימציית כניסה חד-פעמית
+
 function render() {
   updateBoardCount();
   const filtered = state.posts.filter((p) => {
@@ -272,6 +274,11 @@ function renderCard(post, index = 0) {
   const card = el.querySelector('.card');
   card.dataset.id = post.id;
   card.style.setProperty('--i', String(index));
+  // אנימציית כניסה רק בפעם הראשונה שהכרטיס מופיע (לא בכל רענון של 30 שנ׳)
+  if (!seenPostIds.has(post.id)) {
+    seenPostIds.add(post.id);
+    card.classList.add('enter');
+  }
 
   const badge = el.querySelector('.dir-badge');
   const b = dirBadge(post);

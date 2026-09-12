@@ -1,6 +1,6 @@
 // sw.js — service worker: network-first לקבצים סטטיים (כדי שעדכונים תמיד יגיעו),
 // נפילה חזרה למטמון כשאין רשת. ה-API תמיד מהרשת.
-const CACHE = "share-taxi-v2";
+const CACHE = "share-taxi-v4";
 const SHELL = ["/", "/style.css", "/app.js", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
