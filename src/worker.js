@@ -168,7 +168,17 @@ const ADJECTIVES = [
 ];
 
 const id = () => crypto.randomUUID().replace(/-/g, "").slice(0, 16);
-const randName = () => `${ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]} ${Math.floor(Math.random() * 99) + 1}`;
+// שם אנונימי יציב לכל מכשיר (טוקן) — אותו שם לפרסומים ולתגובות, בלי לשמור מידע
+function nameForToken(token) {
+  let h = 2166136261;
+  for (let i = 0; i < token.length; i++) {
+    h ^= token.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const adj = ADJECTIVES[Math.abs(h) % ADJECTIVES.length];
+  const num = (Math.abs(h >> 8) % 99) + 1;
+  return `${adj} ${num}`;
+}
 
 const jsonHeaders = { "Content-Type": "application/json; charset=utf-8" };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: jsonHeaders });
@@ -797,7 +807,7 @@ async function handleApi(request, env, url) {
     const post = {
       id: id(),
       ...v.value,
-      name: randName(),
+      name: nameForToken(token),
       token,
       createdAt: new Date().toISOString(),
       comments: [],
@@ -821,7 +831,7 @@ async function handleApi(request, env, url) {
     if (!post) return json({ error: "הפוסט לא נמצא" }, 404);
     if (post.comments.length >= MAX_COMMENTS) return json({ error: "אין יותר מקום להודעות בפוסט הזה" }, 400);
 
-    const comment = { id: id(), text, name: randName(), token, createdAt: new Date().toISOString() };
+    const comment = { id: id(), text, name: nameForToken(token), token, createdAt: new Date().toISOString() };
     post.comments.push(comment);
     await savePosts(env, posts);
     return json({ comment }, 201);
