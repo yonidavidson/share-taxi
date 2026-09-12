@@ -128,6 +128,15 @@
       </div>
 
       <div class="field">
+        <label>כמה אתם?</label>
+        <div class="segmented" id="seatsSeg">
+          <button type="button" class="seg active" data-seats="1" aria-pressed="true">אני לבד</button>
+          <button type="button" class="seg" data-seats="2" aria-pressed="false">2 נוסעים</button>
+          <button type="button" class="seg" data-seats="3" aria-pressed="false">3+ נוסעים</button>
+        </div>
+      </div>
+
+      <div class="field">
         <label for="note">הערה קצרה <span class="hint">(למשל: <bdi>"ממש על הדרך"</bdi>, <bdi>"2 מקומות"</bdi>)</span></label>
         <input id="note" maxlength="300" placeholder="אופציונלי">
       </div>
@@ -164,6 +173,7 @@
       <div class="dir-badge"></div>
       <div class="card-head">
         <span class="name"></span>
+        <span class="seats-chip" hidden></span>
       </div>
       <div class="route"></div>
       <div class="when"></div>

@@ -133,6 +133,7 @@ const state = {
 
 let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
 let station = STATIONS[0].key; // מפתח תחנה
+let seats = 1; // מספר הנוסעים בקבוצה שלי
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -288,6 +289,12 @@ function renderCard(post, index = 0) {
   badge.classList.add(b.cls);
 
   el.querySelector('.name').textContent = `${post.name} · ${relTime(post.createdAt)}`;
+  if (post.seats > 1) {
+    const seatsChip = el.querySelector('.seats-chip');
+    seatsChip.hidden = false;
+    seatsChip.textContent = `👥 ${post.seats} נוסעים`;
+    seatsChip.title = `הקבוצה שלי: ${post.seats} נוסעים`;
+  }
   el.querySelector('.route').innerHTML =
     `${esc(post.origin)} <span class="arrow">←</span> ${esc(post.destination)}`;
 
@@ -393,6 +400,7 @@ async function sharePost(post) {
     `⏰ ${when}`,
   ];
   if (post.note) lines.push(`📌 ${post.note}`);
+  if (post.seats > 1) lines.push(`👥 ${post.seats} נוסעים`);
   lines.push('', location.origin + location.pathname);
   const text = lines.join('\n');
   if (navigator.share) {
@@ -735,7 +743,7 @@ function renderHero() {
         .map((o) => `${o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : ''}${o.depHome}`)
         .join(' · ');
       const homeShort = home.name.split(' - ')[0];
-      sig = `to/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
+      sig = `to/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
       hasData = true;
       render = () => {
         const bigEl = big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`);
@@ -759,6 +767,50 @@ function renderHero() {
             transfersOf(r.o)));
         }
         if (later) el.appendChild(altLine((best.depDate !== todayYMD() ? 'נגמרו הרכבות להיום · ' : '') + 'עוד מהבית: ' + later));
+
+        // כפתור "אני על הרכבת" — פרסום מהיר שהרכבת שלי מגיעה (רק עבור רכבת של היום)
+        if (best.depDate === todayYMD()) {
+          const already = () => state.posts.some((p) =>
+            p.token === getToken() && p.direction === 'to' && p.date === todayYMD());
+          const rideBtn = document.createElement('button');
+          rideBtn.type = 'button';
+          rideBtn.className = 'btn primary sm hero-ride';
+          if (already()) {
+            rideBtn.textContent = '✅ כבר פרסמת נסיעה להיום';
+            rideBtn.disabled = true;
+          } else {
+            rideBtn.textContent = `🚆 אני על הרכבת${best.train ? ` ${best.train}` : ''} — פרסמו שאני מגיע`;
+            rideBtn.addEventListener('click', async () => {
+              if (already()) {
+                alert('כבר יש לך פרסום פעיל להיום 🙂');
+                rideBtn.textContent = '✅ כבר פרסמת נסיעה להיום';
+                rideBtn.disabled = true;
+                return;
+              }
+              rideBtn.disabled = true;
+              try {
+                const st = STATIONS.find((s) => s.key === best.stationKey) ?? STATIONS[0];
+                await createPost({
+                  direction: 'to',
+                  station: st.key,
+                  origin: st.full,
+                  destination: GAV_YAM,
+                  date: todayYMD(),
+                  time: best.arriveStation,
+                  flexible: '',
+                  note: `🚆 על הרכבת${best.train ? ` ${best.train}` : ''}${best.towards ? ` לכיוון ${best.towards}` : ''}`,
+                  seats: 1,
+                });
+                missionPassed();
+                await refresh();
+              } catch (err) {
+                alert(err.message);
+                rideBtn.disabled = false;
+              }
+            });
+            el.appendChild(rideBtn);
+          }
+        }
       };
     }
   } else {
@@ -781,7 +833,7 @@ function renderHero() {
       const later = state.homePlan.next.slice(1, 3)
         .map((o) => `${o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}`)
         .join(' · ');
-      sig = `from/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
+      sig = `from/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
       hasData = true;
       render = () => {
         el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
@@ -996,6 +1048,13 @@ for (const seg of document.querySelectorAll('#stationSeg .seg')) {
   });
 }
 
+for (const seg of document.querySelectorAll('#seatsSeg .seg')) {
+  seg.addEventListener('click', () => {
+    seats = Number(seg.dataset.seats) || 1;
+    updateSegmented($('#seatsSeg'), 'seats', seg.dataset.seats);
+  });
+}
+
 // ------------------------------------------------------------------
 // Form submit
 // ------------------------------------------------------------------
@@ -1029,12 +1088,14 @@ postForm.addEventListener('submit', async (e) => {
       time,
       flexible: $('#flexible').value,
       note: $('#note').value.trim(),
+      seats,
     });
     try {
       localStorage.setItem('st_last_post', JSON.stringify({
         station: st.key,
         note: $('#note').value.trim(),
         flexible: $('#flexible').value,
+        seats,
       }));
     } catch { /* לא קריטי */ }
     dialog.close();
@@ -1042,8 +1103,10 @@ postForm.addEventListener('submit', async (e) => {
     postForm.reset();
     direction = 'toG';
     station = STATIONS[0].key;
+    seats = 1;
     updateSegmented($('#directionSeg'), 'direction', direction);
     updateSegmented($('#stationSeg'), 'station', station);
+    updateSegmented($('#seatsSeg'), 'seats', '1');
     await refresh();
   } catch (err) {
     formError.textContent = err.message;
@@ -1071,6 +1134,10 @@ function openPostDialog() {
       }
       if (last.note) $('#note').value = last.note;
       if (last.flexible) $('#flexible').value = last.flexible;
+      if (last.seats) {
+        seats = last.seats;
+        updateSegmented($('#seatsSeg'), 'seats', String(last.seats));
+      }
     }
   } catch { /* לא קריטי */ }
 

@@ -30,7 +30,6 @@ const CAR_ESTIMATES = {
   raananaWest: { km: 5.7, min: 10 },
   herzliya: { km: 9.4, min: 15 },
 };
-const INFO_CACHE_KEY = "info_cache_v1";
 const INFO_TTL_MS = 2 * 60 * 1000; // הגשת מטמון טרי עד 2 דקות
 const INFO_STALE_TTL_S = 60 * 60; // שמירת מטמון לגיבוי (stale-while-error)
 const STATIONS_CACHE_KEY = "stations_cache_v1";
@@ -119,7 +118,6 @@ async function notifyNewComment(env, post, comment) {
 // אחרת הערכת עומס טיפוסית לפי שעה (עם סימון "הערכה" ב-UI).
 // ------------------------------------------------------------------
 const TOMTOM_BASE = "https://api.tomtom.com/routing/1/calculateRoute";
-const TRAFFIC_CACHE_KEY = "traffic_cache_v1";
 const TRAFFIC_COOLDOWN_KEY = "traffic_cooldown_v1";
 const TRAFFIC_TTL_MS = 15 * 60 * 1000; // תנועה מתרעננת כל 15 דקות (מגן על המכסה)
 const TRAFFIC_COOLDOWN_MS = 30 * 60 * 1000; // אחרי 429 — לא מנסים שוב חצי שעה
@@ -198,11 +196,7 @@ async function getCarEstimates(env) {
   const apiKey = env.TOMTOM_API_KEY;
   if (!apiKey) return fallbackCars();
 
-  let cached = null;
-  try {
-    const raw = await env.SHARE_TAXI_KV.get(TRAFFIC_CACHE_KEY);
-    if (raw) cached = JSON.parse(raw);
-  } catch { /* מטמון פגום — מרעננים */ }
+  let cached = await cacheGetJson("traffic");
 
   if (cached && Date.now() - cached.at < TRAFFIC_TTL_MS && cached.cars) return cached.cars;
 
@@ -219,9 +213,7 @@ async function getCarEstimates(env) {
     const cars = {};
     const fallback = fallbackCars();
     for (const key of Object.keys(CAR_ESTIMATES)) cars[key] = live[key] ?? fallback[key];
-    await env.SHARE_TAXI_KV.put(TRAFFIC_CACHE_KEY, JSON.stringify({ at: Date.now(), cars }), {
-      expirationTtl: 3600,
-    });
+    await cachePutJson("traffic", { at: Date.now(), cars }, 3600);
     return cars;
   } catch (err) {
     console.error("live traffic failed:", err);
@@ -262,6 +254,35 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 const clean = (v, max) => String(v ?? "").trim().slice(0, max);
 const isValidDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 const isValidTime = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+
+// ------------------------------------------------------------------
+// מטמון Cache API — לנתונים חמים (מידע חי, תוכניות, תנועה) בלי לצרוך
+// כתיבות KV. מפתחות פנימיים תחת דומיין סינתטי.
+// ------------------------------------------------------------------
+async function cacheGetJson(key) {
+  try {
+    if (typeof caches === "undefined") return null;
+    const res = await caches.default.match(new Request(`https://cache.internal/${key}`));
+    return res ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function cachePutJson(key, obj, ttlSec) {
+  try {
+    if (typeof caches === "undefined") return;
+    await caches.default.put(
+      new Request(`https://cache.internal/${key}`),
+      new Response(JSON.stringify(obj), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": `max-age=${ttlSec}`,
+        },
+      })
+    );
+  } catch { /* מטמון לא קריטי */ }
+}
 
 // ------------------------------------------------------------------
 // KV helpers — כל הפוסטים במפתח אחד (נפח קטן, תעבורה נמוכה)
@@ -354,13 +375,15 @@ function validatePost(body) {
   const flexible = clean(body.flexible, 40);
   const note = clean(body.note, MAX_NOTE);
   const station = clean(body.station, 40);
+  const seatsNum = Number(body.seats);
+  const seats = Number.isInteger(seatsNum) && seatsNum >= 1 && seatsNum <= 5 ? seatsNum : 0;
 
   if (!destination) return { error: "חסר יעד" };
   if (!origin) return { error: "חסרה נקודת מוצא" };
   if (!isValidDate(date)) return { error: "תאריך לא תקין" };
   if (!isValidTime(time)) return { error: "שעה לא תקינה" };
 
-  return { value: { direction, destination, origin, date, time, flexible, note, station: STATION_KEYS.has(station) ? station : "" } };
+  return { value: { direction, destination, origin, date, time, flexible, note, station: STATION_KEYS.has(station) ? station : "", seats } };
 }
 
 // ------------------------------------------------------------------
@@ -502,13 +525,9 @@ async function buildInfo(env) {
   };
 }
 
-// מטמון KV: מגישים מידע טרי עד 2 דקות; אם ה-API נופל — מגישים מטמון ישן
+// מטמון: מגישים מידע טרי עד 2 דקות; אם ה-API נופל — מגישים מטמון ישן
 async function getInfo(env) {
-  let cached = null;
-  try {
-    const raw = await env.SHARE_TAXI_KV.get(INFO_CACHE_KEY);
-    if (raw) cached = JSON.parse(raw);
-  } catch { /* מטמון פגום — מתעלמים */ }
+  const cached = await cacheGetJson("info");
 
   const now = Date.now();
   if (cached && now - cached.at < INFO_TTL_MS) {
@@ -516,9 +535,7 @@ async function getInfo(env) {
   }
   try {
     const info = await buildInfo(env);
-    await env.SHARE_TAXI_KV.put(INFO_CACHE_KEY, JSON.stringify({ at: now, info }), {
-      expirationTtl: INFO_STALE_TTL_S,
-    });
+    await cachePutJson("info", { at: now, info }, INFO_STALE_TTL_S);
     return { info, cachedAt: now, stale: false };
   } catch (err) {
     console.error("buildInfo failed:", err);
@@ -679,23 +696,17 @@ async function buildHomePlan(env, homeId) {
   return { updatedAt: Date.now(), date, hour, homeId, stations, next, best: next[0] ?? null };
 }
 
-// מטמון KV לתוכניות הביתה (לפי תחנת יעד)
+// מטמון לתוכניות הביתה (לפי תחנת יעד)
 async function getHomePlan(env, homeId) {
   const cacheKey = HOME_CACHE_PREFIX + homeId;
-  let cached = null;
-  try {
-    const raw = await env.SHARE_TAXI_KV.get(cacheKey);
-    if (raw) cached = JSON.parse(raw);
-  } catch { /* מטמון פגום — מרעננים */ }
+  const cached = await cacheGetJson(cacheKey);
 
   if (cached && Date.now() - cached.at < HOME_CACHE_TTL_MS) {
     return { plan: cached.plan, cachedAt: cached.at, stale: false };
   }
   try {
     const plan = await buildHomePlan(env, homeId);
-    await env.SHARE_TAXI_KV.put(cacheKey, JSON.stringify({ at: Date.now(), plan }), {
-      expirationTtl: 3600,
-    });
+    await cachePutJson(cacheKey, { at: Date.now(), plan }, 3600);
     return { plan, cachedAt: Date.now(), stale: false };
   } catch (err) {
     console.error("buildHomePlan failed:", err);
@@ -769,20 +780,14 @@ async function buildWorkPlan(env, homeId) {
 
 async function getWorkPlan(env, homeId) {
   const cacheKey = WORK_CACHE_PREFIX + homeId;
-  let cached = null;
-  try {
-    const raw = await env.SHARE_TAXI_KV.get(cacheKey);
-    if (raw) cached = JSON.parse(raw);
-  } catch { /* מטמון פגום — מרעננים */ }
+  const cached = await cacheGetJson(cacheKey);
 
   if (cached && Date.now() - cached.at < WORK_CACHE_TTL_MS) {
     return { plan: cached.plan, cachedAt: cached.at, stale: false };
   }
   try {
     const plan = await buildWorkPlan(env, homeId);
-    await env.SHARE_TAXI_KV.put(cacheKey, JSON.stringify({ at: Date.now(), plan }), {
-      expirationTtl: 3600,
-    });
+    await cachePutJson(cacheKey, { at: Date.now(), plan }, 3600);
     return { plan, cachedAt: Date.now(), stale: false };
   } catch (err) {
     console.error("buildWorkPlan failed:", err);
@@ -794,6 +799,9 @@ async function getWorkPlan(env, homeId) {
 // ------------------------------------------------------------------
 // Router
 // ------------------------------------------------------------------
+// ייצוא לפונקציות טהורות — לשימוש בבדיקות בלבד (לא נדרש בזמן ריצה)
+export { tzOffsetMs, israelEpoch, israelNow, addMinutes, nameForToken, isValidDate, isValidTime };
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -825,8 +833,7 @@ async function handleApi(request, env, url, ctx) {
   if (method === "GET" && pathname === "/api/health") {
     let infoAgeSec = null;
     try {
-      const raw = await env.SHARE_TAXI_KV.get(INFO_CACHE_KEY);
-      const cached = raw ? JSON.parse(raw) : null;
+      const cached = await cacheGetJson("info");
       if (cached?.at) infoAgeSec = Math.round((Date.now() - cached.at) / 1000);
     } catch { /* לא קריטי */ }
     return json({ ok: true, now: Date.now(), infoAgeSec });

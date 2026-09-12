@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test": "node --test",
     "kv:create": "wrangler kv namespace create SHARE_TAXI_KV"
   },
   "devDependencies": {
