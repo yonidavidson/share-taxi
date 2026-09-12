@@ -31,6 +31,8 @@ const CAR_ESTIMATES = {
 const INFO_CACHE_KEY = "info_cache_v1";
 const INFO_TTL_MS = 2 * 60 * 1000; // הגשת מטמון טרי עד 2 דקות
 const INFO_STALE_TTL_S = 60 * 60; // שמירת מטמון לגיבוי (stale-while-error)
+const STATIONS_CACHE_KEY = "stations_cache_v1";
+const STATIONS_CACHE_TTL_S = 24 * 60 * 60; // רשימת התחנות משתנה לעיתים רחוקות
 
 const ADJECTIVES = [
   "נוסע ענייני", "חבר מסלול", "שותף שקט", "מרחף קליל", "גלגל שינוע",
@@ -306,6 +308,29 @@ async function getInfo(env) {
   }
 }
 
+// רשימת כל תחנות רכבת ישראל (לבחירת תחנת בית) — מטמון ל-24 שעות
+async function getStations(env) {
+  try {
+    const raw = await env.SHARE_TAXI_KV.get(STATIONS_CACHE_KEY);
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length) return cached;
+    }
+  } catch { /* מטמון פגום — מרעננים */ }
+
+  const stations = await railApi("/common/api/v1/stations?languageId=Hebrew&systemType=2");
+  const list = (stations ?? [])
+    .map((s) => ({ id: s.stationId, name: String(s.stationName ?? "").trim() }))
+    .filter((s) => Number.isInteger(s.id) && s.name)
+    .sort((a, b) => a.name.localeCompare(b.name, "he"));
+  if (list.length) {
+    await env.SHARE_TAXI_KV.put(STATIONS_CACHE_KEY, JSON.stringify(list), {
+      expirationTtl: STATIONS_CACHE_TTL_S,
+    });
+  }
+  return list;
+}
+
 // ------------------------------------------------------------------
 // Router
 // ------------------------------------------------------------------
@@ -335,6 +360,18 @@ async function handleApi(request, env, url) {
   const { pathname } = url;
   const method = request.method;
   const token = clientToken(request);
+
+  // GET /api/stations — רשימת כל התחנות (לבחירת תחנת הבית)
+  if (method === "GET" && pathname === "/api/stations") {
+    try {
+      const stations = await getStations(env);
+      if (!stations.length) throw new Error("empty stations list");
+      return json({ stations });
+    } catch (err) {
+      console.error("stations failed:", err);
+      return json({ error: "רשימת התחנות לא זמינה כרגע" }, 502);
+    }
+  }
 
   // GET /api/info — לוח חי: רכבות הבאות + זמני נסיעה (עם מטמון KV)
   if (method === "GET" && pathname === "/api/info") {

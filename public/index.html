@@ -40,6 +40,11 @@
       <div id="infoUpdated" class="info-foot"></div>
     </section>
 
+    <button id="homeBar" class="home-bar" type="button">
+      <span class="hb-icon" aria-hidden="true">🏠</span>
+      <span id="homeLabel">בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה</span>
+    </button>
+
     <div class="toolbar">
       <div class="filters">
         <div class="chips" id="dirFilters" role="group" aria-label="סינון לפי כיוון">
@@ -121,6 +126,24 @@
       <div class="actions">
         <button type="button" class="btn ghost" data-close>ביטול</button>
         <button type="submit" class="btn primary">פרסום חיפוש</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="homeDialog" class="dialog">
+    <form id="homeForm" method="dialog" novalidate>
+      <div class="dialog-title">
+        <span class="mission-tag">HOME BASE</span>
+        <h2>איפה הבית? 🏠</h2>
+      </div>
+      <div class="field">
+        <input id="homeSearch" type="search" placeholder="חיפוש תחנה…" aria-label="חיפוש תחנת בית" dir="rtl">
+      </div>
+      <div id="homeList" class="home-list" aria-label="רשימת תחנות"></div>
+      <p class="home-hint">הבחירה נשמרת במכשיר שלך בלבד, ותשמש לחישוב "מתי אגיע הביתה".</p>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="homeClear">נקה בחירה</button>
+        <button type="button" class="btn ghost" id="homeClose">סגירה</button>
       </div>
     </form>
   </dialog>

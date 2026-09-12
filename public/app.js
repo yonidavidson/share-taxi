@@ -381,6 +381,94 @@ $('#infoToggle').addEventListener('click', () => {
 });
 
 // ------------------------------------------------------------------
+// תחנת הבית — פרופיל מקומי במכשיר (localStorage)
+// ------------------------------------------------------------------
+const HOME_KEY = 'st_home_station';
+let home = null;
+try { home = JSON.parse(localStorage.getItem(HOME_KEY) || 'null'); } catch { home = null; }
+if (!home || !Number.isInteger(home.id) || !home.name) home = null;
+
+let stationsCache = null;
+
+function renderHomeBar() {
+  const bar = $('#homeBar');
+  if (home) {
+    bar.classList.add('set');
+    $('#homeLabel').textContent = `הביתה: ${home.name}`;
+    bar.title = 'שינוי תחנת הבית';
+  } else {
+    bar.classList.remove('set');
+    $('#homeLabel').textContent = 'בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה';
+    bar.title = '';
+  }
+}
+
+async function loadStations() {
+  if (stationsCache) return stationsCache;
+  const res = await fetch('/api/stations');
+  if (!res.ok) throw new Error(`stations ${res.status}`);
+  const data = await res.json();
+  stationsCache = data.stations ?? [];
+  return stationsCache;
+}
+
+function renderHomeList(query = '') {
+  const list = $('#homeList');
+  const q = query.trim();
+  const items = (stationsCache ?? []).filter((s) => !q || s.name.includes(q));
+  if (!items.length) {
+    list.innerHTML = '<div class="home-empty">לא נמצאו תחנות מתאימות</div>';
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const s of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'station-option' + (home && home.id === s.id ? ' current' : '');
+    btn.textContent = s.name;
+    btn.addEventListener('click', () => {
+      home = { id: s.id, name: s.name };
+      localStorage.setItem(HOME_KEY, JSON.stringify(home));
+      renderHomeBar();
+      renderHomeList($('#homeSearch').value);
+      onHomeChanged();
+      $('#homeDialog').close();
+    });
+    frag.appendChild(btn);
+  }
+  list.replaceChildren(frag);
+}
+
+function onHomeChanged() {
+  // מתכנן "מתי בבית" (#9) יתרענן יחד עם הלוח החי
+  refreshInfo();
+}
+
+$('#homeBar').addEventListener('click', async () => {
+  $('#homeDialog').showModal();
+  $('#homeList').innerHTML = '<div class="home-empty">טוען תחנות…</div>';
+  try {
+    await loadStations();
+    renderHomeList($('#homeSearch').value);
+  } catch {
+    $('#homeList').innerHTML = '<div class="home-empty">טעינת התחנות נכשלה — נסו שוב</div>';
+  }
+});
+
+$('#homeSearch').addEventListener('input', (e) => renderHomeList(e.target.value));
+$('#homeForm').addEventListener('submit', (e) => e.preventDefault());
+$('#homeClear').addEventListener('click', () => {
+  home = null;
+  localStorage.removeItem(HOME_KEY);
+  renderHomeBar();
+  onHomeChanged();
+  $('#homeDialog').close();
+});
+$('#homeClose').addEventListener('click', () => $('#homeDialog').close());
+
+renderHomeBar();
+
+// ------------------------------------------------------------------
 // Data refresh
 // ------------------------------------------------------------------
 async function refresh() {
