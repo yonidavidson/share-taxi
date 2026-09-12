@@ -534,7 +534,25 @@ document.addEventListener('visibilitychange', () => {
 // ------------------------------------------------------------------
 const isSecureCtx = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 if ('serviceWorker' in navigator && isSecureCtx) {
-  navigator.serviceWorker.register('/sw.js').catch(() => { /* לא קריטי */ });
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+    .then((reg) => reg.update())
+    .catch(() => { /* לא קריטי */ });
+
+  // כשגרסה חדשה של ה-SW תופסת פיקוד — מרעננים פעם אחת כדי לקבל את הקבצים החדשים מיד
+  if (navigator.serviceWorker.controller) {
+    let refreshed = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshed) return;
+      refreshed = true;
+      location.reload();
+    });
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update()).catch(() => {});
+    }
+  });
 }
 
 let deferredInstall = null;

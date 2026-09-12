@@ -1,5 +1,6 @@
-// sw.js — service worker בסיסי: cache-first לקבצים סטטיים, רשת בלבד ל-API
-const CACHE = "share-taxi-v2";
+// sw.js — service worker: network-first כדי שתמיד יוצגו הקבצים העדכניים,
+// עם מטמון כגיבוי כשאין רשת. ה-API תמיד מהרשת (מידע חי).
+const CACHE = "share-taxi-v3";
 const SHELL = ["/", "/style.css", "/app.js", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -22,15 +23,14 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
 
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request).then((resp) => {
+    fetch(e.request)
+      .then((resp) => {
         if (resp.ok && url.origin === self.location.origin) {
           const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
         }
         return resp;
-      }).catch(() => caches.match("/"));
-    })
+      })
+      .catch(() => caches.match(e.request).then((cached) => cached || caches.match("/")))
   );
 });
