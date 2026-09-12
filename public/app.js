@@ -112,8 +112,20 @@ function postStation(post) {
 
 function dirBadge(post) {
   return post.direction === 'from'
-    ? { text: '🏠 חוזרים מהגב-ים', cls: 'from' }
-    : { text: '🏢 נוסעים אל גב-ים רעננה', cls: 'to' };
+    ? { text: '🏠 חוזרים הביתה', cls: 'from' }
+    : { text: '🏢 נוסעים לגב-ים', cls: 'to' };
+}
+
+// ברירת מחדל של הכיוון לפי השעה ביום (שעון ישראל): עד 12:00 — נוסעים לעבודה; אחרי — חוזרים הביתה
+function israelHour() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jerusalem', hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  return Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+}
+
+function defaultDirection() {
+  return israelHour() < 12 ? 'toG' : 'fromG';
 }
 
 // ------------------------------------------------------------------
@@ -563,6 +575,10 @@ postForm.addEventListener('submit', async (e) => {
 // Wiring
 // ------------------------------------------------------------------
 $('#newPost').addEventListener('click', () => {
+  // ברירת מחדל של כיוון לפי השעה: עד 12:00 — לעבודה; אחרי — הביתה
+  direction = defaultDirection();
+  updateSegmented($('#directionSeg'), 'direction', direction);
+
   // ברירת מחדל: היום
   const now = new Date();
   $('#date').min = toYMD(now);
