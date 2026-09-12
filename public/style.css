@@ -39,7 +39,7 @@ body {
 .header {
   position: relative;
   background: linear-gradient(180deg, #0c0c0f 0%, #17171c 100%);
-  padding: 0 0 26px;
+  padding: 0 0 18px;
   border-bottom: 4px solid #000;
   overflow: hidden;
 }
@@ -51,7 +51,7 @@ body {
     var(--gta-yellow) 0 18px, #0c0c0f 18px 36px, var(--white) 36px 42px, #0c0c0f 42px 60px);
   border-bottom: 3px solid #000;
 }
-.header-inner { padding-top: 40px; text-align: center; position: relative; }
+.header-inner { padding-top: 34px; text-align: center; position: relative; }
 
 .gta-tape {
   display: inline-block;
@@ -68,9 +68,9 @@ body {
 }
 
 .header h1 {
-  margin: 6px 0 10px;
+  margin: 4px 0 8px;
   font-family: "Secular One", "Anton", sans-serif;
-  font-size: clamp(30px, 8vw, 52px);
+  font-size: clamp(26px, 6.5vw, 46px);
   line-height: 1.05;
   text-transform: none;
   color: var(--white);
@@ -82,12 +82,12 @@ body {
 .header h1 .hl { color: var(--gta-yellow); }
 
 .tagline {
-  margin: 14px auto 0; max-width: 520px;
-  font-size: 15px; color: #d8d8de;
+  margin: 10px auto 0; max-width: 520px;
+  font-size: 13.5px; color: #d8d8de;
   background: rgba(0,0,0,0.72);
   border: 2px solid #000;
   box-shadow: var(--hard-shadow-sm);
-  padding: 10px 16px;
+  padding: 7px 14px;
   display: inline-block;
   text-align: right;
 }
@@ -102,12 +102,28 @@ body {
 .stars .on { color: var(--gta-yellow); }
 .stars .off { color: #3c3c46; }
 
-/* ---------- Toolbar ---------- */
-.toolbar {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap; margin: 26px 0 16px;
+/* ---------- Hero: הכיוון שלי + הצעד הבא ---------- */
+.hero { margin: 20px 0 4px; display: grid; gap: 10px; }
+.hero-dir { box-shadow: var(--hard-shadow-sm); }
+.hero-line {
+  min-height: 44px;
+  background: var(--paper); color: #15151a;
+  border: 3px solid #000; border-radius: 8px;
+  box-shadow: var(--hard-shadow-sm);
+  padding: 9px 12px;
+  font-size: 14px; font-weight: 700;
+  display: grid; align-content: center;
 }
-.filters { display: grid; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.hero-main { font-size: 16.5px; font-weight: 800; }
+.hero-sub { font-size: 12.5px; color: #4b4b45; margin-top: 2px; }
+.hero-alts { font-size: 12px; color: #6b6b64; margin-top: 4px; }
+
+/* ---------- סרגל הלוח ---------- */
+.board-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 18px 0 14px;
+}
+.sticky-cta { display: none; }
 .chips {
   display: flex; gap: 8px;
   flex-wrap: nowrap; overflow-x: auto;
@@ -133,6 +149,14 @@ body {
   transform: rotate(-1.5deg);
 }
 .toolbar-actions { display: flex; gap: 10px; }
+.info-head-actions { display: flex; align-items: center; gap: 6px; }
+.icon-btn {
+  border: 2px solid #000; background: #101014; color: #d8d8de;
+  border-radius: 999px; padding: 3px 10px;
+  font-size: 13px; font-weight: 700; font-family: inherit;
+  cursor: pointer;
+}
+.icon-btn:hover { color: var(--gta-yellow); }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -329,29 +353,13 @@ body {
 .tr .cancel { color: #ff6b70; font-style: normal; font-size: 11px; font-weight: 700; }
 .tr-none { color: var(--muted); font-size: 12px; }
 .info-foot { color: #8b8b95; font-size: 11.5px; margin-top: 10px; }
-.info.collapsed .info-stats, .info.collapsed .info-grid, .info.collapsed .info-foot, .info.collapsed .home-plan { display: none; }
-
-/* ---------- מתכנן "מתי בבית" ---------- */
-.home-plan {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: #101014;
-  border: 2px solid #000;
-  border-radius: 8px;
-  box-shadow: var(--hard-shadow-sm);
-}
-.hp-head { font-family: "Secular One", sans-serif; font-size: 15px; margin-bottom: 4px; }
-.hp-main { font-size: 16px; font-weight: 800; color: var(--gta-yellow); }
-.hp-sub { font-size: 12.5px; color: #c9c9d2; margin-top: 2px; }
-.hp-alts { display: grid; gap: 2px; margin-top: 6px; }
-.hp-alts span { font-size: 12px; color: var(--muted); }
-.hp-none { font-size: 13px; color: var(--muted); }
+.info.collapsed .info-stats, .info.collapsed .info-grid, .info.collapsed .info-foot { display: none; }
 
 /* ---------- תחנת הבית ---------- */
 .home-bar {
   display: flex; align-items: center; gap: 8px;
   width: 100%;
-  margin: 18px 0 0;
+  margin: 0;
   padding: 9px 14px;
   background: transparent;
   color: var(--muted);
@@ -489,18 +497,24 @@ body {
   border: 3px solid #000;
 }
 
-@media (max-width: 480px) {
-  .header-inner { padding-top: 34px; }
+@media (max-width: 640px) {
+  .header-inner { padding-top: 30px; }
   .stars { display: none; }
-  .toolbar { flex-direction: column; align-items: stretch; }
-  .filters { width: 100%; }
-  .toolbar-actions { justify-content: space-between; }
-  .btn.primary { flex: 1; }
   .row { flex-direction: column; gap: 0; }
   .route { font-size: 17px; }
   .seg { padding: 10px 4px; font-size: 13px; }
   .info { padding: 12px; }
   .info-stats { font-size: 12.5px; }
+  #newPost { display: none; }
+  body { padding-bottom: 88px; }
+  .sticky-cta {
+    display: block;
+    position: fixed; inset: auto 0 0 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(20,20,23,0) 0%, rgba(20,20,23,0.95) 45%);
+    z-index: 5;
+  }
+  .sticky-cta .btn { width: 100%; }
 }
 
-.btn.install-btn { background: var(--teal) !important; color: #06251d; }
+.install-btn { background: transparent !important; }

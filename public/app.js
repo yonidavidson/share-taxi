@@ -59,9 +59,11 @@ const deletePost = (postId) => api(`/api/posts/${postId}`, { method: 'DELETE' })
 const state = {
   posts: [],
   filter: 'all', // 'all' | מפתח תחנה
-  dir: 'all', // 'all' | 'to' | 'from'
+  dir: 'to', // הכיוון שלי: 'to' | 'from' — תמיד אחד מהם (ברירת מחדל לפי שעה)
   loading: false,
   cars: null, // זמני נסיעה (עם תנועה) לפי תחנה — מגיע מ-/api/info
+  info: null, // תגובת /api/info האחרונה (עבור שורת ה-hero)
+  homePlan: null, // תוכנית "מתי בבית" האחרונה
 };
 
 let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
@@ -135,8 +137,7 @@ function defaultDirection() {
 function render() {
   const filtered = state.posts.filter((p) => {
     if (state.filter !== 'all' && postStation(p) !== state.filter) return false;
-    if (state.dir !== 'all' && (p.direction === 'from' ? 'from' : 'to') !== state.dir) return false;
-    return true;
+    return (p.direction === 'from' ? 'from' : 'to') === state.dir;
   });
 
   if (state.loading) {
@@ -148,9 +149,9 @@ function render() {
     list.innerHTML = `
       <div class="empty">
         <span class="big">🚕</span>
-        <span class="mission">${state.filter !== 'all' || state.dir !== 'all' ? 'אין משימות בסינון הזה' : 'MISSION START?'}</span><br>
-        אין כרגע חיפושי מונית פעילים.<br>
-        היו הראשונים — לחצו על <b>«מחפשים מונית»</b> ופתחו משימה חדשה!
+        <span class="mission">${state.filter !== 'all' ? 'אין משימות בסינון הזה' : 'MISSION START?'}</span><br>
+        אין כרגע חיפושי מונית ${state.dir === 'from' ? 'לכיוון הביתה' : 'לגב-ים'}.<br>
+        היו הראשונים — לחצו על <b>«מחפשים מונית»</b>!
       </div>`;
     return;
   }
@@ -388,6 +389,9 @@ function renderInfo(payload) {
   panel.hidden = false;
   $('#infoUpdated').textContent =
     `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${payload.stale ? ' · מטמון' : ''}`;
+
+  state.info = info;
+  renderHero();
 }
 
 async function refreshInfo() {
@@ -402,79 +406,97 @@ async function refreshInfo() {
 }
 
 // ------------------------------------------------------------------
-// מתכנן "מתי בבית" — מבוסס /api/home (תחנת יעד = הבית השמור)
+// "הכיוון שלי" + שורת ה-hero: מה הצעד הבא שלי
 // ------------------------------------------------------------------
 function stationShort(key) {
   return STATIONS.find((s) => s.key === key)?.short ?? key;
 }
 
-function renderHomePlan(plan) {
-  const wrap = $('#homePlan');
-  const frag = document.createDocumentFragment();
+function setDirection(dir) {
+  state.dir = dir === 'from' ? 'from' : 'to';
+  for (const seg of document.querySelectorAll('#myDirSeg .seg')) {
+    const active = (seg.dataset.direction === 'toG' ? 'to' : 'from') === state.dir;
+    seg.classList.toggle('active', active);
+    seg.setAttribute('aria-pressed', String(active));
+  }
+  renderHero();
+  render();
+}
 
-  const head = document.createElement('div');
-  head.className = 'hp-head';
-  head.textContent = `🏠 הביתה ל${home.name}`;
-  frag.appendChild(head);
+function earliestArrival(info) {
+  const all = [];
+  for (const st of info?.stations ?? []) {
+    for (const a of st.arrivals ?? []) all.push({ ...a, key: st.key });
+  }
+  all.sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+  const first = all[0];
+  if (!first) return null;
+  const day = first.date !== todayYMD() ? `${shortDay(first.date)} ` : '';
+  return { time: first.time, day, station: stationShort(first.key) };
+}
 
-  if (!plan || !plan.best) {
-    const none = document.createElement('div');
-    none.className = 'hp-none';
-    none.textContent = 'אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא.';
-    frag.appendChild(none);
-    wrap.replaceChildren(frag);
-    wrap.hidden = false;
-    wrap.dataset.loaded = '1';
+function renderHero() {
+  const el = $('#heroLine');
+  if (state.dir === 'to') {
+    const next = earliestArrival(state.info);
+    el.textContent = next
+      ? `🚆 הרכבת הבאה מגיעה: ${next.day}${next.time} ל${next.station}`
+      : '🚆 לוח הרכבות החיות למטה 👇';
     return;
   }
 
+  // חוזרים הביתה
+  if (!home) {
+    el.textContent = '🏠 בחרו את תחנת הבית — ונחשב מתי תגיעו הביתה';
+    return;
+  }
+  const plan = state.homePlan;
+  if (!plan) { el.textContent = '🏠 מחשבים מתי תגיעו הביתה…'; return; }
+  if (!plan.best) { el.textContent = '🏠 אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא'; return; }
+
   const best = plan.best;
   const sameDay = best.arriveDate === todayYMD();
-  const bestDay = sameDay ? '' : `${shortDay(best.arriveDate)} `;
+  const day = sameDay ? '' : `${shortDay(best.arriveDate)} `;
+  el.replaceChildren();
+
   const main = document.createElement('div');
-  main.className = 'hp-main';
+  main.className = 'hero-main';
   if (sameDay) {
     main.innerHTML = `אם יוצאים עכשיו → בבית ב-<bdi>${best.arriveHome}</bdi>`;
   } else {
-    main.textContent = `הרכבת הבאה הביתה: ${bestDay}${best.arriveHome}`;
+    main.textContent = `הרכבת הבאה הביתה: ${day}${best.arriveHome}`;
   }
-  frag.appendChild(main);
+  el.appendChild(main);
 
   const sub = document.createElement('div');
-  sub.className = 'hp-sub';
+  sub.className = 'hero-sub';
   sub.textContent = `צאו מגב-ים עד ${best.leaveBy} · דרך ${stationShort(best.stationKey)} (רכבת ${best.trainDeparture})` +
     (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
-  frag.appendChild(sub);
+  el.appendChild(sub);
 
   const alts = plan.next.slice(1, 3);
   if (alts.length) {
-    const altEl = document.createElement('div');
-    altEl.className = 'hp-alts';
-    for (const o of alts) {
-      const day = o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : '';
-      const item = document.createElement('span');
-      item.textContent = `${day}${o.arriveHome} (צאו עד ${o.leaveBy} · ${stationShort(o.stationKey)})`;
-      altEl.appendChild(item);
-    }
-    frag.appendChild(altEl);
+    const alt = document.createElement('div');
+    alt.className = 'hero-alts';
+    alt.textContent = 'בהמשך: ' + alts.map((o) => {
+      const d = o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : '';
+      return `${d}${o.arriveHome} (צאו עד ${o.leaveBy})`;
+    }).join(' · ');
+    el.appendChild(alt);
   }
-
-  wrap.replaceChildren(frag);
-  wrap.hidden = false;
-  wrap.dataset.loaded = '1';
 }
 
 async function refreshHomePlan() {
-  const wrap = $('#homePlan');
-  if (!home) { wrap.hidden = true; return; }
+  if (!home) { state.homePlan = null; renderHero(); return; }
   try {
     const res = await fetch(`/api/home?to=${home.id}`);
     if (!res.ok) throw new Error(`home ${res.status}`);
     const data = await res.json();
-    renderHomePlan(data.plan);
+    state.homePlan = data.plan;
   } catch {
-    if (!wrap.dataset.loaded) wrap.hidden = true;
+    /* נשארים עם התוכנית הקודמת אם יש */
   }
+  renderHero();
 }
 
 $('#infoToggle').addEventListener('click', () => {
@@ -666,9 +688,9 @@ postForm.addEventListener('submit', async (e) => {
 // ------------------------------------------------------------------
 // Wiring
 // ------------------------------------------------------------------
-$('#newPost').addEventListener('click', () => {
-  // ברירת מחדל של כיוון לפי השעה: עד 12:00 — לעבודה; אחרי — הביתה
-  direction = defaultDirection();
+function openPostDialog() {
+  // הטופס נפתח עם הכיוון הנוכחי שלי; אפשר לשנות בתוך הטופס לפרסום חד-פעמי
+  direction = state.dir === 'from' ? 'fromG' : 'toG';
   updateSegmented($('#directionSeg'), 'direction', direction);
 
   // ברירת מחדל: היום
@@ -681,7 +703,10 @@ $('#newPost').addEventListener('click', () => {
     $('#time').value = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
   }
   dialog.showModal();
-});
+}
+
+$('#newPost').addEventListener('click', openPostDialog);
+$('#newPostSticky').addEventListener('click', openPostDialog);
 
 for (const btn of dialog.querySelectorAll('[data-close]')) {
   btn.addEventListener('click', () => dialog.close());
@@ -699,19 +724,12 @@ $('#filters').addEventListener('click', (e) => {
   render();
 });
 
-$('#dirFilters').addEventListener('click', (e) => {
-  const chip = e.target.closest('.chip');
-  if (!chip) return;
-  state.dir = chip.dataset.dir;
-  for (const c of document.querySelectorAll('#dirFilters .chip')) {
-    const active = c === chip;
-    c.classList.toggle('active', active);
-    c.setAttribute('aria-pressed', String(active));
-  }
-  render();
-});
+// "הכיוון שלי" — קובע את סינון הלוח ואת ברירת המחדל של הטופס
+for (const seg of document.querySelectorAll('#myDirSeg .seg')) {
+  seg.addEventListener('click', () => setDirection(seg.dataset.direction === 'toG' ? 'to' : 'from'));
+}
 
-$('#refresh').addEventListener('click', refresh);
+$('#infoRefresh').addEventListener('click', () => { refresh(); refreshInfo(); });
 
 function toYMD(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -753,8 +771,8 @@ if ('serviceWorker' in navigator && isSecureCtx) {
 
 let deferredInstall = null;
 const installBtn = document.createElement('button');
-installBtn.className = 'btn ghost install-btn';
-installBtn.textContent = '📲 התקנה';
+installBtn.className = 'icon-btn install-btn';
+installBtn.textContent = '📲';
 installBtn.title = 'התקינו את האפליקציה';
 installBtn.setAttribute('aria-label', 'התקינו את האפליקציה');
 installBtn.hidden = true;
@@ -765,7 +783,7 @@ installBtn.addEventListener('click', async () => {
   deferredInstall = null;
   installBtn.hidden = true;
 });
-document.querySelector('.toolbar-actions').appendChild(installBtn);
+document.querySelector('.info-head-actions').prepend(installBtn);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -777,5 +795,6 @@ window.addEventListener('appinstalled', () => {
   installBtn.hidden = true;
 });
 
+setDirection(defaultDirection() === 'fromG' ? 'from' : 'to');
 refresh();
 refreshInfo();

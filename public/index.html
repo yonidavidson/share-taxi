@@ -23,47 +23,45 @@
     <div class="header-inner">
       <span class="stars" aria-hidden="true"><span class="on">★★★</span><span class="off">★★</span></span>
       <span class="gta-tape">SHERUT MISSIONS</span>
-      <h1>מונית משותפת<br><span class="hl">גב-ים רעננה</span></h1>
-      <p class="tagline">סוגרים את <b>הקילומטר האחרון</b> — בין תחנת הרכבת למרכז העבודה.<br>
-      מרכבת רעננה מערב, רעננה דרום או הרצליה — אל גב-ים רעננה ובחזרה. אנונימי לגמרי, בלי הרשמה.</p>
+      <h1>מונית משותפת <span class="hl">גב-ים רעננה</span></h1>
+      <p class="tagline">הקילומטר האחרון בין הרכבת לגב-ים · אנונימי, בלי הרשמה</p>
     </div>
   </header>
 
   <main class="wrap">
+    <section class="hero" aria-label="הכיוון שלי">
+      <div class="segmented hero-dir" id="myDirSeg" role="group" aria-label="הכיוון שלי">
+        <button type="button" class="seg active" data-direction="toG" aria-pressed="true">🏢 נוסעים לגב-ים</button>
+        <button type="button" class="seg" data-direction="fromG" aria-pressed="false">🏠 חוזרים הביתה</button>
+      </div>
+      <div id="heroLine" class="hero-line"></div>
+      <button id="homeBar" class="home-bar" type="button">
+        <span class="hb-icon" aria-hidden="true">🏠</span>
+        <span id="homeLabel">בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה</span>
+      </button>
+    </section>
+
     <section id="infoPanel" class="info" hidden aria-label="לוח מידע חי">
       <div class="info-head">
         <span class="info-title">🛰️ לוח חי</span>
-        <button id="infoToggle" class="info-toggle" type="button" aria-expanded="true">כיווץ ▲</button>
+        <span class="info-head-actions">
+          <button id="infoRefresh" class="icon-btn" type="button" aria-label="רענון" title="רענון">⟳</button>
+          <button id="infoToggle" class="info-toggle" type="button" aria-expanded="true">כיווץ ▲</button>
+        </span>
       </div>
       <div id="infoStats" class="info-stats"></div>
-      <div id="homePlan" class="home-plan" hidden></div>
       <div id="infoGrid" class="info-grid" tabindex="0" role="group" aria-label="מידע חי לפי תחנות"></div>
       <div id="infoUpdated" class="info-foot"></div>
     </section>
 
-    <button id="homeBar" class="home-bar" type="button">
-      <span class="hb-icon" aria-hidden="true">🏠</span>
-      <span id="homeLabel">בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה</span>
-    </button>
-
-    <div class="toolbar">
-      <div class="filters">
-        <div class="chips" id="dirFilters" role="group" aria-label="סינון לפי כיוון">
-          <button class="chip active" data-dir="all" aria-pressed="true">כל הכיוונים</button>
-          <button class="chip" data-dir="to" aria-pressed="false">🏢 נוסעים לגב-ים</button>
-          <button class="chip" data-dir="from" aria-pressed="false">🏠 חוזרים הביתה</button>
-        </div>
-        <div class="chips" id="filters" role="group" aria-label="סינון לפי תחנה">
-          <button class="chip active" data-filter="all" aria-pressed="true">כל התחנות</button>
-          <button class="chip" data-filter="raananaSouth" aria-pressed="false">🚆 רעננה דרום</button>
-          <button class="chip" data-filter="raananaWest" aria-pressed="false">🚆 רעננה מערב</button>
-          <button class="chip" data-filter="herzliya" aria-pressed="false">🚆 הרצליה</button>
-        </div>
+    <div class="board-toolbar">
+      <div class="chips" id="filters" role="group" aria-label="סינון לפי תחנה">
+        <button class="chip active" data-filter="all" aria-pressed="true">כל התחנות</button>
+        <button class="chip" data-filter="raananaSouth" aria-pressed="false">🚆 רעננה דרום</button>
+        <button class="chip" data-filter="raananaWest" aria-pressed="false">🚆 רעננה מערב</button>
+        <button class="chip" data-filter="herzliya" aria-pressed="false">🚆 הרצליה</button>
       </div>
-      <div class="toolbar-actions">
-        <button id="newPost" class="btn primary">+ מחפשים מונית</button>
-        <button id="refresh" class="btn ghost" title="רענון" aria-label="רענון">⟳</button>
-      </div>
+      <button id="newPost" class="btn primary">+ מחפשים מונית</button>
     </div>
 
     <div id="list" class="list" aria-live="polite"></div>
@@ -72,6 +70,11 @@
   <footer class="wrap footer">
     סוגרים את הקילומטר האחרון בין הרכבת לעבודה 🚕 — בלי חשבונות, בלי טלפונים, בלי מידע אישי.
   </footer>
+
+  <div class="sticky-cta" id="stickyCta">
+    <button class="btn primary" id="newPostSticky">+ מחפשים מונית</button>
+  </div>
+
   <dialog id="postDialog" class="dialog">
     <form id="postForm" method="dialog" novalidate>
       <div class="dialog-title">
@@ -118,7 +121,7 @@
       </div>
 
       <div class="field">
-        <label for="note">הערה קצרה <span class="hint">(למשל: <bdi>"ממש על הדרך"</bdi>, <bdi>"2 מקומות"</bdi>, <bdi>"חוזר ב-17:00"</bdi>)</span></label>
+        <label for="note">הערה קצרה <span class="hint">(למשל: <bdi>"ממש על הדרך"</bdi>, <bdi>"2 מקומות"</bdi>)</span></label>
         <input id="note" maxlength="300" placeholder="אופציונלי">
       </div>
 
