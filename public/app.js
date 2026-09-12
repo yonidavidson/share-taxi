@@ -199,8 +199,9 @@ function renderCard(post) {
   const flex = post.flexible ? ` <span>(<bdi>${esc(post.flexible)}</bdi>)</span>` : '';
   const stationKey = postStation(post);
   const car = stationKey ? (state.cars?.[stationKey] ?? TAXI[stationKey]) : null;
+  const fare = fareEstimate(car);
   const taxi = car
-    ? ` <span class="taxi-hint" data-key="${esc(stationKey)}" title="זמן נסיעה משוער ברכב/מונית בין התחנה לגב-ים">· 🚕 ≈${car.min} דק׳</span>`
+    ? ` <span class="taxi-hint" data-key="${esc(stationKey)}" title="${fare ? `הערכת מונית שלמה ≈${fare.total} ₪ · משותפת ל-3 ≈${fare.per3} ₪ לאדם` : 'זמן נסיעה משוער ברכב/מונית'}">· 🚕 ≈${car.min} דק׳${fare ? ` · ≈${fare.total} ₪` : ''}</span>`
     : '';
   when.innerHTML = `⏰ <b>${esc(post.time)}</b>${flex}${taxi}`;
 
@@ -229,6 +230,14 @@ function renderCard(post) {
     quick.appendChild(btn);
   }
 
+  // שיתוף ההזמנה (וואטסאפ / שיתוף מקורי)
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button';
+  shareBtn.textContent = '📤 שתפו';
+  shareBtn.title = 'שיתוף ההזמנה עם נוסעים';
+  shareBtn.addEventListener('click', () => sharePost(post));
+  quick.appendChild(shareBtn);
+
   // טופס תגובה חופשית
   el.querySelector('.comment-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -255,11 +264,40 @@ function renderCard(post) {
   return el.firstElementChild;
 }
 
+/** אומדן מונית (נסיעה שלמה + חלוקה) מתוך ק"מ */
+function fareEstimate(car) {
+  if (!car || !Number.isFinite(car.km) || car.km <= 0) return null;
+  const total = Math.round(12.5 + car.km * 3.2);
+  return { total, per3: Math.max(1, Math.round(total / 3)) };
+}
+
 function updateTaxiHints() {
   for (const el of document.querySelectorAll('.taxi-hint[data-key]')) {
     const car = state.cars?.[el.dataset.key] ?? TAXI[el.dataset.key];
-    if (car) el.textContent = `· 🚕 ≈${car.min} דק׳`;
+    if (!car) continue;
+    const fare = fareEstimate(car);
+    el.textContent = `· 🚕 ≈${car.min} דק׳` + (fare ? ` · ≈${fare.total} ₪` : '');
+    if (fare) el.title = `הערכת מונית שלמה ≈${fare.total} ₪ · משותפת ל-3 ≈${fare.per3} ₪ לאדם`;
   }
+}
+
+// שיתוף הזמנה — שיתוף מקורי במכשיר, וואטסאפ כברירת מחדל
+async function sharePost(post) {
+  const dir = post.direction === 'from' ? '🏠 חוזרים הביתה' : '🏢 נוסעים לגב-ים';
+  const when = `${dayLabel(post.date)} ${post.time}${post.flexible ? ` (${post.flexible})` : ''}`;
+  const lines = [
+    '🚕 מונית משותפת · גב-ים רעננה',
+    `${dir} · ${post.origin} → ${post.destination}`,
+    `⏰ ${when}`,
+  ];
+  if (post.note) lines.push(`📌 ${post.note}`);
+  lines.push('', location.origin + location.pathname);
+  const text = lines.join('\n');
+  if (navigator.share) {
+    try { await navigator.share({ title: 'מונית משותפת · גב-ים רעננה', text }); } catch { /* המשתמש ביטל */ }
+    return;
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 }
 
 async function sendComment(postId, text) {
@@ -389,8 +427,10 @@ function renderInfo(payload) {
   panel.dataset.loaded = '1';
   panel.hidden = false;
   if (!panel.dataset.toggled) setPanelCollapsed(!!home);
-  $('#infoUpdated').textContent =
-    `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${payload.stale ? ' · מטמון' : ''}`;
+  const ageMin = Math.round((Date.now() - payload.cachedAt) / 60000);
+  const foot = $('#infoUpdated');
+  foot.textContent = `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${payload.stale || ageMin >= 5 ? ' · ייתכן שאינו מעודכן' : ''}`;
+  foot.classList.toggle('stale', payload.stale || ageMin >= 5);
 
   state.info = info;
   renderHero();
@@ -844,6 +884,13 @@ postForm.addEventListener('submit', async (e) => {
       flexible: $('#flexible').value,
       note: $('#note').value.trim(),
     });
+    try {
+      localStorage.setItem('st_last_post', JSON.stringify({
+        station: st.key,
+        note: $('#note').value.trim(),
+        flexible: $('#flexible').value,
+      }));
+    } catch { /* לא קריטי */ }
     dialog.close();
     postForm.reset();
     direction = 'toG';
@@ -866,6 +913,19 @@ function openPostDialog() {
   // הטופס נפתח עם הכיוון הנוכחי שלי; אפשר לשנות בתוך הטופס לפרסום חד-פעמי
   direction = state.dir === 'from' ? 'fromG' : 'toG';
   updateSegmented($('#directionSeg'), 'direction', direction);
+
+  // זוכרים את הנסיעה האחרונה — פרסום חוזר בקלות
+  try {
+    const last = JSON.parse(localStorage.getItem('st_last_post') || 'null');
+    if (last) {
+      if (last.station && STATIONS.some((s) => s.key === last.station)) {
+        station = last.station;
+        updateSegmented($('#stationSeg'), 'station', station);
+      }
+      if (last.note) $('#note').value = last.note;
+      if (last.flexible) $('#flexible').value = last.flexible;
+    }
+  } catch { /* לא קריטי */ }
 
   // ברירת מחדל: היום
   const now = new Date();
@@ -968,6 +1028,21 @@ window.addEventListener('beforeinstallprompt', (e) => {
 window.addEventListener('appinstalled', () => {
   installBtn.hidden = true;
 });
+
+// רמז התקנה ל-iOS (לספארי אין beforeinstallprompt)
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+if (isIOS && !isStandalone && !localStorage.getItem('st_ios_hint')) {
+  const hint = document.createElement('div');
+  hint.className = 'ios-hint';
+  hint.innerHTML = '📲 להתקנה באייפון: <b>שיתוף</b> ואז <b>״הוסף למסך הבית״</b> <button type="button" aria-label="סגירת ההמלצה">✕</button>';
+  hint.querySelector('button').addEventListener('click', () => {
+    localStorage.setItem('st_ios_hint', '1');
+    hint.remove();
+  });
+  const hero = document.querySelector('.hero');
+  if (hero) hero.after(hint);
+}
 
 setDirection(defaultDirection() === 'fromG' ? 'from' : 'to');
 refresh();
