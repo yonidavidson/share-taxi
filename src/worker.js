@@ -44,7 +44,9 @@ const WORK_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הבוקר מתרעננ
 // ------------------------------------------------------------------
 const TOMTOM_BASE = "https://api.tomtom.com/routing/1/calculateRoute";
 const TRAFFIC_CACHE_KEY = "traffic_cache_v1";
-const TRAFFIC_TTL_MS = 10 * 60 * 1000; // תנועה מתרעננת כל 10 דקות
+const TRAFFIC_COOLDOWN_KEY = "traffic_cooldown_v1";
+const TRAFFIC_TTL_MS = 15 * 60 * 1000; // תנועה מתרעננת כל 15 דקות (מגן על המכסה)
+const TRAFFIC_COOLDOWN_MS = 30 * 60 * 1000; // אחרי 429 — לא מנסים שוב חצי שעה
 const STATION_COORDS = {
   raananaSouth: { lat: 32.172592, lon: 34.886196 },
   raananaWest: { lat: 32.180012, lon: 34.850805 },
@@ -81,6 +83,7 @@ function fallbackCars() {
 
 async function fetchTomTomTraffic(apiKey) {
   const cars = {};
+  let rateLimited = false;
   const results = await Promise.allSettled(
     Object.entries(STATION_COORDS).map(async ([key, c]) => {
       const url = `${TOMTOM_BASE}/${c.lat},${c.lon}:${GAV_YAM_COORD.lat},${GAV_YAM_COORD.lon}` +
@@ -100,7 +103,16 @@ async function fetchTomTomTraffic(apiKey) {
   );
   for (const r of results) {
     if (r.status === "fulfilled") cars[r.value[0]] = r.value[1];
-    else console.error("tomtom leg failed:", r.reason?.message ?? r.reason);
+    else {
+      const msg = String(r.reason?.message ?? r.reason);
+      if (msg.includes("429")) rateLimited = true;
+      console.error("tomtom leg failed:", msg);
+    }
+  }
+  if (!Object.keys(cars).length) {
+    const err = new Error(rateLimited ? "tomtom rate limited (429)" : "tomtom all legs failed");
+    err.rateLimited = rateLimited;
+    throw err;
   }
   return cars;
 }
@@ -118,6 +130,14 @@ async function getCarEstimates(env) {
 
   if (cached && Date.now() - cached.at < TRAFFIC_TTL_MS && cached.cars) return cached.cars;
 
+  // קירור אחרי הגבלת קצב — מגישים מטמון/הערכה בלי להציף את השירות
+  try {
+    const rawCooldown = await env.SHARE_TAXI_KV.get(TRAFFIC_COOLDOWN_KEY);
+    if (rawCooldown && Date.now() < Number(rawCooldown)) {
+      return cached?.cars ?? fallbackCars();
+    }
+  } catch { /* לא קריטי */ }
+
   try {
     const live = await fetchTomTomTraffic(apiKey);
     const cars = {};
@@ -129,6 +149,13 @@ async function getCarEstimates(env) {
     return cars;
   } catch (err) {
     console.error("live traffic failed:", err);
+    if (err?.rateLimited) {
+      try {
+        await env.SHARE_TAXI_KV.put(TRAFFIC_COOLDOWN_KEY, String(Date.now() + TRAFFIC_COOLDOWN_MS), {
+          expirationTtl: 3600,
+        });
+      } catch { /* לא קריטי */ }
+    }
     if (cached?.cars) return cached.cars;
     return fallbackCars();
   }
@@ -154,9 +181,14 @@ const isValidTime = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 // KV helpers — כל הפוסטים במפתח אחד (נפח קטן, תעבורה נמוכה)
 // ------------------------------------------------------------------
 async function loadPosts(env) {
-  const raw = await env.SHARE_TAXI_KV.get("posts");
-  const posts = raw ? JSON.parse(raw) : [];
-  return Array.isArray(posts) ? posts : [];
+  try {
+    const raw = await env.SHARE_TAXI_KV.get("posts");
+    const posts = raw ? JSON.parse(raw) : [];
+    return Array.isArray(posts) ? posts : [];
+  } catch (err) {
+    console.error("loadPosts: KV פגום, מתחילים רשימה ריקה", err);
+    return [];
+  }
 }
 
 async function savePosts(env, posts) {

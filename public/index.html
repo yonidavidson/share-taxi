@@ -21,10 +21,11 @@
 <body>
   <header class="header">
     <div class="header-inner">
-      <span class="stars" aria-hidden="true"><span class="on">★★★</span><span class="off">★★</span></span>
+      <span class="stars" aria-hidden="true"><span class="on">★★★★</span><span class="off">★</span></span>
       <span class="gta-tape">SHERUT MISSIONS</span>
       <h1>מונית משותפת <span class="hl">גב-ים רעננה</span></h1>
       <p class="tagline">הקילומטר האחרון בין הרכבת לגב-ים · אנונימי, בלי הרשמה</p>
+      <button id="soundToggle" class="sound-toggle" type="button" aria-label="השתקת צלילים" aria-pressed="true" title="השתקת צלילים">🔊</button>
     </div>
   </header>
 
@@ -56,6 +57,8 @@
       <div id="infoGrid" class="info-grid" tabindex="0" role="group" aria-label="מידע חי לפי תחנות"></div>
       <div id="infoUpdated" class="info-foot"></div>
     </section>
+
+    <div id="boardCount" class="board-count" hidden aria-live="polite"></div>
 
     <div class="board-toolbar">
       <div class="chips" id="filters" role="group" aria-label="סינון לפי תחנה">

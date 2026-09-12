@@ -1,6 +1,6 @@
-// sw.js — service worker: network-first כדי שתמיד יוצגו הקבצים העדכניים,
-// עם מטמון כגיבוי כשאין רשת. ה-API תמיד מהרשת (מידע חי).
-const CACHE = "share-taxi-v3";
+// sw.js — service worker: network-first לקבצים סטטיים (כדי שעדכונים תמיד יגיעו),
+// נפילה חזרה למטמון כשאין רשת. ה-API תמיד מהרשת.
+const CACHE = "share-taxi-v2";
 const SHELL = ["/", "/style.css", "/app.js", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -22,15 +22,14 @@ self.addEventListener("fetch", (e) => {
   // ה-API תמיד מהרשת — מידע חי
   if (e.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
 
+  // network-first: תמיד מנסים קודם את הרשת, ומעדכנים את המטמון
   e.respondWith(
-    fetch(e.request)
-      .then((resp) => {
-        if (resp.ok && url.origin === self.location.origin) {
-          const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-        }
-        return resp;
-      })
-      .catch(() => caches.match(e.request).then((cached) => cached || caches.match("/")))
+    fetch(e.request).then((resp) => {
+      if (resp.ok && url.origin === self.location.origin) {
+        const copy = resp.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+      }
+      return resp;
+    }).catch(() => caches.match(e.request).then((r) => r || caches.match("/")))
   );
 });

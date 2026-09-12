@@ -54,6 +54,67 @@ const addComment = (postId, text) => api(`/api/posts/${postId}/comments`, { meth
 const deletePost = (postId) => api(`/api/posts/${postId}`, { method: 'DELETE' });
 
 // ------------------------------------------------------------------
+// 🔔 צלילים — ג'ינגל "משימה הושלמה" מסונתז (בלי קבצים), עם מתג השתקה
+// ------------------------------------------------------------------
+const SOUND_KEY = 'st_sound';
+let soundOn = localStorage.getItem(SOUND_KEY) !== '0';
+let audioCtx = null;
+
+function updateSoundBtn() {
+  const b = $('#soundToggle');
+  if (!b) return;
+  b.textContent = soundOn ? '🔊' : '🔇';
+  b.setAttribute('aria-pressed', String(soundOn));
+  b.title = soundOn ? 'השתקת צלילים' : 'הפעלת צלילים';
+}
+
+function tone(freq, at, dur, type = 'square', gain = 0.1) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(gain, at + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.start(at);
+  o.stop(at + dur + 0.03);
+}
+
+function playMissionPassed() {
+  if (!soundOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t = audioCtx.currentTime;
+    for (const [f, dt] of [[523.25, 0], [659.25, 0.12], [783.99, 0.24], [1046.5, 0.37]]) {
+      tone(f, t + dt, 0.16);
+    }
+    tone(130.81, t, 0.6, 'triangle', 0.07);
+  } catch { /* דפדפן בלי Web Audio — לא קריטי */ }
+}
+
+// מסך "MISSION PASSED" בסטייל GTA — עם רטט בנייד
+function missionPassed() {
+  const ov = document.createElement('div');
+  ov.className = 'mission-passed';
+  ov.innerHTML = '<div class="mp-card"><div class="mp-title">MISSION PASSED</div>' +
+    '<div class="mp-sub">הפרסום עלה ללוח · RESPECT +</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', dismiss);
+  const timer = setTimeout(dismiss, 2300);
+  function dismiss() {
+    clearTimeout(timer);
+    if (!ov.isConnected) return;
+    ov.classList.add('out');
+    setTimeout(() => ov.remove(), 320);
+  }
+  playMissionPassed();
+  if (navigator.vibrate) navigator.vibrate([40, 50, 90]);
+}
+
+// ------------------------------------------------------------------
 // State
 // ------------------------------------------------------------------
 const state = {
@@ -89,9 +150,15 @@ function parseYMD(dateStr) {
   return new Date(y, m - 1, d);
 }
 
+// הפרש ימים מתאריך נתון עד "היום" — לפי שעון ישראל, לא לפי המכשיר
+function israelDayDiff(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [ty, tm, td] = israelDatePlus(0).split('-').map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+}
+
 function dayLabel(dateStr) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const diff = Math.round((parseYMD(dateStr) - today) / 86400000);
+  const diff = israelDayDiff(dateStr);
   if (diff === 0) return 'היום';
   if (diff === 1) return 'מחר';
   return new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -137,6 +204,7 @@ function defaultDirection() {
 // Rendering
 // ------------------------------------------------------------------
 function render() {
+  updateBoardCount();
   const filtered = state.posts.filter((p) => {
     if (state.filter !== 'all' && postStation(p) !== state.filter) return false;
     return (p.direction === 'from' ? 'from' : 'to') === state.dir;
@@ -174,17 +242,36 @@ function render() {
     h.textContent = dayLabel(date);
     group.appendChild(h);
 
-    for (const post of posts) group.appendChild(renderCard(post));
+    for (const [i, post] of posts.entries()) group.appendChild(renderCard(post, i));
     frag.appendChild(group);
   }
   list.replaceChildren(frag);
 }
 
-function renderCard(post) {
+// מונה חי מעל הלוח — מתעדכן באנימציה כשמספר המחפשים משתנה
+function updateBoardCount() {
+  const el = $('#boardCount');
+  if (!el) return;
+  const total = state.posts.length;
+  const mine = state.posts.filter((p) => (p.direction === 'from' ? 'from' : 'to') === state.dir).length;
+  if (!total) { el.hidden = true; el.dataset.sig = ''; return; }
+  el.hidden = false;
+  const sig = `${total}/${mine}`;
+  if (el.dataset.sig === sig) return;
+  const grew = el.dataset.sig && Number(el.dataset.sig.split('/')[0]) < total;
+  el.dataset.sig = sig;
+  el.textContent = `📣 ${total} מחפשים בלוח · ${mine} בכיוון שלך${grew ? ' · מצטרפים! 🔥' : ''}`;
+  el.classList.remove('pop');
+  void el.offsetWidth; // restart animation
+  el.classList.add('pop');
+}
+
+function renderCard(post, index = 0) {
   const tpl = $('#cardTemplate');
   const el = tpl.content.cloneNode(true);
   const card = el.querySelector('.card');
   card.dataset.id = post.id;
+  card.style.setProperty('--i', String(index));
 
   const badge = el.querySelector('.dir-badge');
   const b = dirBadge(post);
@@ -313,12 +400,11 @@ async function sendComment(postId, text) {
 const DELAY_ON_TIME_MAX = 2; // עד 2 דקות איחור נחשב "בזמן"
 
 function todayYMD() {
-  return toYMD(new Date());
+  return israelDatePlus(0);
 }
 
 function shortDay(dateStr) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const diff = Math.round((parseYMD(dateStr) - today) / 86400000);
+  const diff = israelDayDiff(dateStr);
   if (diff === 0) return '';
   if (diff === 1) return 'מחר';
   return new Intl.DateTimeFormat('he-IL', { weekday: 'short' }).format(parseYMD(dateStr));
@@ -426,6 +512,7 @@ function renderInfo(payload) {
   const panel = $('#infoPanel');
   panel.dataset.loaded = '1';
   panel.hidden = false;
+  panel.classList.remove('loading');
   if (!panel.dataset.toggled) setPanelCollapsed(!!home);
   const ageMin = Math.round((Date.now() - payload.cachedAt) / 60000);
   const foot = $('#infoUpdated');
@@ -439,12 +526,22 @@ function renderInfo(payload) {
 async function refreshInfo() {
   refreshHomePlan(); // במקביל — לא תלוי בהצלחת לוח הרכבות
   refreshWorkPlan();
+  const panel = $('#infoPanel');
+  // שלד טעינה — הלוח מוצג מיד עם אנימציית shimmer במקום מסך ריק
+  if (!panel.dataset.loaded) {
+    panel.hidden = false;
+    panel.classList.add('loading');
+    if (!$('#infoGrid').childElementCount) {
+      $('#infoGrid').innerHTML = '<div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div>';
+    }
+  }
   try {
     const res = await fetch('/api/info');
     if (!res.ok) throw new Error(`info ${res.status}`);
     renderInfo(await res.json());
   } catch {
-    if (!$('#infoPanel').dataset.loaded) $('#infoPanel').hidden = true;
+    panel.classList.remove('loading');
+    if (!panel.dataset.loaded) panel.hidden = true;
   }
 }
 
@@ -579,7 +676,7 @@ function renderHero() {
   if (state.dir === 'to') {
     if (!home) {
       sig = 'to/nohome';
-      render = () => { el.textContent = '🏠 הגדירו תחנת בית — ונחשב את הדרך מהבית לעבודה'; };
+      render = () => { el.textContent = '🏠 לחצו כאן לבחירת תחנת הבית — ונחשב את הדרך מהבית לעבודה'; };
     } else if (!state.workPlan) {
       sig = 'to/loading';
       render = () => { el.textContent = '🚆 מחשבים את הדרך מהבית…'; };
@@ -623,7 +720,7 @@ function renderHero() {
   } else {
     if (!home) {
       sig = 'from/nohome';
-      render = () => { el.textContent = '🏠 בחרו את תחנת הבית — ונחשב מתי תגיעו הביתה'; };
+      render = () => { el.textContent = '🏠 לחצו כאן לבחירת תחנת הבית — ונחשב מתי תגיעו הביתה'; };
     } else if (!state.homePlan) {
       sig = 'from/loading';
       render = () => { el.textContent = '🏠 מחשבים מתי תגיעו הביתה…'; };
@@ -662,6 +759,7 @@ function renderHero() {
   }
 
   el.classList.toggle('loading', sig.endsWith('/loading'));
+  el.classList.toggle('setup', !home);
   if (sig === state.heroSig) return;
   state.heroSig = sig;
   el.replaceChildren();
@@ -726,18 +824,9 @@ if (!home || !Number.isInteger(home.id) || !home.name) home = null;
 let stationsCache = null;
 
 function renderHomeBar() {
-  const bar = $('#homeBar');
-  if (home) {
-    // אין שורת הגדרה שלמה — שינוי הבית זמין בעיפרון הקטן שלצד המתג
-    bar.hidden = true;
-    $('#homeEdit').hidden = false;
-  } else {
-    bar.hidden = false;
-    bar.classList.remove('set');
-    $('#homeLabel').textContent = 'בחרו את תחנת הבית — כדי לדעת מתי תגיעו הביתה';
-    bar.title = '';
-    $('#homeEdit').hidden = true;
-  }
+  // ההגדרה מוצגת פעם אחת בלבד — בכרטיס ה-hero; אין שורת בחירה כפולה
+  $('#homeBar').hidden = true;
+  $('#homeEdit').hidden = !home;
 }
 
 async function loadStations() {
@@ -782,7 +871,9 @@ function onHomeChanged() {
   refreshInfo();
 }
 
-$('#homeBar').addEventListener('click', async () => {
+$('#homeBar').addEventListener('click', openHomeDialog);
+
+async function openHomeDialog() {
   $('#homeDialog').showModal();
   $('#homeList').innerHTML = '<div class="home-empty">טוען תחנות…</div>';
   try {
@@ -791,9 +882,14 @@ $('#homeBar').addEventListener('click', async () => {
   } catch {
     $('#homeList').innerHTML = '<div class="home-empty">טעינת התחנות נכשלה — נסו שוב</div>';
   }
+}
+
+// כרטיס ה-hero עצמו הוא הכפתור כשעוד לא נבחרה תחנת בית
+$('#heroLine').addEventListener('click', () => {
+  if (!home) openHomeDialog();
 });
 
-$('#homeEdit').addEventListener('click', () => $('#homeBar').click());
+$('#homeEdit').addEventListener('click', openHomeDialog);
 
 $('#homeSearch').addEventListener('input', (e) => renderHomeList(e.target.value));
 $('#homeForm').addEventListener('submit', (e) => e.preventDefault());
@@ -892,6 +988,7 @@ postForm.addEventListener('submit', async (e) => {
       }));
     } catch { /* לא קריטי */ }
     dialog.close();
+    missionPassed();
     postForm.reset();
     direction = 'toG';
     station = STATIONS[0].key;
@@ -927,14 +1024,14 @@ function openPostDialog() {
     }
   } catch { /* לא קריטי */ }
 
-  // ברירת מחדל: היום
-  const now = new Date();
-  $('#date').min = toYMD(now);
-  $('#date').max = toYMD(new Date(now.getTime() + 6 * 86400000));
-  if (!$('#date').value) $('#date').value = toYMD(now);
+  // ברירת מחדל: היום לפי שעון ישראל (לא לפי אזור הזמן של המכשיר)
+  $('#date').min = israelDatePlus(0);
+  $('#date').max = israelDatePlus(6);
+  if (!$('#date').value) $('#date').value = israelDatePlus(0);
   if (!$('#time').value) {
-    const t = new Date(now.getTime() + 5 * 60000); // עגול ל-5 הדקות הבאות
-    $('#time').value = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const epoch = Math.ceil((Date.now() + 5 * 60000) / 300000) * 300000; // עגול ל-5 הדקות הבאות
+    const p = israelParts(epoch);
+    $('#time').value = `${p.hour}:${p.minute}`;
   }
   dialog.showModal();
 }
@@ -964,10 +1061,6 @@ for (const seg of document.querySelectorAll('#myDirSeg .seg')) {
 }
 
 $('#infoRefresh').addEventListener('click', () => { refresh(); refreshInfo(); });
-
-function toYMD(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 // רענון אוטומטי כל 30 שניות וכשחוזרים ללשונית
 setInterval(() => {
@@ -1005,10 +1098,8 @@ if ('serviceWorker' in navigator && isSecureCtx) {
 
 let deferredInstall = null;
 const installBtn = document.createElement('button');
-installBtn.className = 'icon-btn install-btn';
-installBtn.textContent = '📲';
-installBtn.title = 'התקינו את האפליקציה';
-installBtn.setAttribute('aria-label', 'התקינו את האפליקציה');
+installBtn.className = 'install-pill';
+installBtn.innerHTML = '📲 <span>התקינו את האפליקציה</span>';
 installBtn.hidden = true;
 installBtn.addEventListener('click', async () => {
   if (!deferredInstall) return;
@@ -1017,7 +1108,7 @@ installBtn.addEventListener('click', async () => {
   deferredInstall = null;
   installBtn.hidden = true;
 });
-document.querySelector('.info-head-actions').prepend(installBtn);
+document.body.appendChild(installBtn);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -1042,6 +1133,45 @@ if (isIOS && !isStandalone && !localStorage.getItem('st_ios_hint')) {
   });
   const hero = document.querySelector('.hero');
   if (hero) hero.after(hint);
+}
+
+// ------------------------------------------------------------------
+// 🔊 מתג צליל + 🚕 מונית חולפת בכניסה הראשונה לסשן
+// ------------------------------------------------------------------
+updateSoundBtn();
+$('#soundToggle').addEventListener('click', () => {
+  soundOn = !soundOn;
+  localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0');
+  updateSoundBtn();
+  if (soundOn) playMissionPassed();
+});
+
+if (!sessionStorage.getItem('st_taxi_drive') &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  sessionStorage.setItem('st_taxi_drive', '1');
+  const taxi = document.createElement('div');
+  taxi.className = 'taxi-drive';
+  taxi.textContent = '🚕';
+  taxi.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(taxi);
+  setTimeout(() => taxi.remove(), 5400);
+}
+
+// ------------------------------------------------------------------
+// שעון ישראל (גם אם המכשיר מוגדר לאזור זמן אחר)
+// ------------------------------------------------------------------
+function israelParts(epochMs = Date.now()) {
+  const p = {};
+  for (const x of new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(epochMs))) p[x.type] = x.value;
+  return p;
+}
+
+function israelDatePlus(days) {
+  const p = israelParts(Date.now() + days * 86400000);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 setDirection(defaultDirection() === 'fromG' ? 'from' : 'to');

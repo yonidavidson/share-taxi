@@ -184,6 +184,17 @@ body {
 .hero-cd.soon { background: #c2410c; color: #fff; }
 .hero-cd:empty { display: none; }
 
+/* הזמנה ללחיצה כשאין תחנת בית */
+.hero-line.setup { cursor: pointer; border-style: dashed; }
+.hero-line.setup:hover { border-color: var(--gta-yellow); }
+.hero-line.setup::after {
+  content: "בחירת תחנה ›";
+  justify-self: end;
+  background: var(--gta-yellow); color: #000;
+  border: 2px solid #000; border-radius: 999px;
+  padding: 1px 12px; font-size: 12.5px; font-weight: 800;
+}
+
 /* ---------- סרגל הלוח ---------- */
 .board-toolbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -588,3 +599,137 @@ body {
 }
 
 .install-btn { background: transparent !important; }
+
+/* ============================================================
+   ✨ WOW — מסך Mission Passed, צליל, מונית חולפת, סקלטון, התקנה
+   ============================================================ */
+
+/* --- מתג צליל בכותרת --- */
+.sound-toggle {
+  position: absolute; top: 24px; inset-inline-end: 8px;
+  border: 2px solid #000; border-radius: 999px;
+  background: #101014; color: #d8d8de;
+  width: 38px; height: 38px;
+  font-size: 17px; line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--hard-shadow-sm);
+  transition: transform 0.08s, color 0.15s;
+}
+.sound-toggle:hover { transform: translate(-1px, -1px); color: var(--gta-yellow); }
+
+/* --- מונה חי מעל הלוח --- */
+.board-count {
+  margin: 14px 0 -4px;
+  display: block;
+  background: #101014;
+  border: 2px solid #000;
+  border-radius: 6px;
+  box-shadow: var(--hard-shadow-sm);
+  color: var(--gta-yellow);
+  font-size: 13px; font-weight: 800;
+  padding: 6px 12px;
+}
+.board-count.pop { animation: countPop 0.45s cubic-bezier(.2,.8,.2,1); }
+@keyframes countPop {
+  0% { transform: scale(0.96); background: var(--gta-yellow); color: #000; }
+  100% { transform: scale(1); background: #101014; color: var(--gta-yellow); }
+}
+
+/* --- MISSION PASSED --- */
+.mission-passed {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  background: rgba(8, 8, 10, 0.78);
+  backdrop-filter: blur(3px);
+  cursor: pointer;
+  animation: mpFadeIn 0.18s ease-out;
+}
+.mission-passed.out { animation: mpFadeOut 0.3s ease-in forwards; }
+.mp-card {
+  background: var(--gta-yellow);
+  color: #000;
+  border: 4px solid #000;
+  box-shadow: 12px 12px 0 #000;
+  border-radius: 10px;
+  padding: 26px 38px;
+  text-align: center;
+  transform: rotate(-2deg);
+  animation: mpPop 0.4s cubic-bezier(.2, 1.4, .4, 1);
+}
+.mp-title {
+  font-family: "Secular One", "Anton", sans-serif;
+  font-size: clamp(30px, 9vw, 52px);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: 3px 3px 0 #fff;
+}
+.mp-sub { margin-top: 10px; font-size: 15px; font-weight: 800; }
+.mp-sub::after { content: " ⭐⭐⭐"; }
+@keyframes mpPop {
+  0% { transform: rotate(-6deg) scale(0.5); opacity: 0; }
+  70% { transform: rotate(-1deg) scale(1.06); opacity: 1; }
+  100% { transform: rotate(-2deg) scale(1); }
+}
+@keyframes mpFadeIn { from { opacity: 0; } }
+@keyframes mpFadeOut { to { opacity: 0; } }
+
+/* --- מונית חולפת על המסך --- */
+.taxi-drive {
+  position: fixed; bottom: 96px; inset-inline-start: -90px;
+  font-size: 42px; z-index: 60; pointer-events: none;
+  filter: drop-shadow(3px 3px 0 #000);
+  animation: taxiDrive 5.2s linear forwards;
+}
+@keyframes taxiDrive {
+  0% { transform: translateX(0) scaleX(-1); opacity: 0; }
+  6% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(-130vw) scaleX(-1); opacity: 0; }
+}
+
+/* --- כפתור התקנה צף --- */
+.install-pill {
+  position: fixed; z-index: 55;
+  inset-inline-start: 14px; bottom: 84px;
+  border: 3px solid #000; border-radius: 999px;
+  background: var(--teal); color: #06251d;
+  font-family: "Secular One", "Rubik", sans-serif;
+  font-size: 14px;
+  padding: 9px 16px;
+  cursor: pointer;
+  box-shadow: var(--hard-shadow-sm);
+  animation: installBob 2.4s ease-in-out infinite;
+}
+.install-pill:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 #000; }
+@keyframes installBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@media (min-width: 641px) {
+  .install-pill { bottom: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .install-pill, .mission-passed, .mp-card, .taxi-drive, .card, .board-count.pop { animation: none !important; }
+}
+
+/* --- שלד טעינה ללוח החי --- */
+.info.loading .info-grid { display: grid; }
+.skeleton-row {
+  height: 38px; border-radius: 6px;
+  border: 2px solid #000;
+  background: linear-gradient(100deg, #16161b 30%, #23232b 50%, #16161b 70%);
+  background-size: 300% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -100% 0; } }
+
+/* --- כניסת כרטיסים בהדרגה --- */
+@media (prefers-reduced-motion: no-preference) {
+  .card { animation: cardIn 0.34s cubic-bezier(.2, .8, .2, 1) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+}
+
+/* --- קפיצה קלה כשזמן מונית מתעדכן להערכת זמן אמת --- */
+.taxi-hint.updated { animation: chipPulse 0.8s ease-out; }
