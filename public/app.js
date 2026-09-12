@@ -437,6 +437,19 @@ const big = (html) => heroEl('hero-big', html);
 const doLine = (html) => heroEl('hero-do', html);
 const detail = (text) => { const d = heroEl('hero-detail'); d.textContent = text; return d; };
 const altLine = (text) => { const d = heroEl('hero-alts'); d.textContent = text; return d; };
+const optLine = (text) => { const d = heroEl('hero-opt'); d.textContent = text; return d; };
+
+// כל התחנות עם אפשרות — מסודרות לפי זמן ההגעה ליעד (גב-ים / הבית)
+function heroStationRows(plan) {
+  const rows = (plan?.stations ?? [])
+    .filter((s) => s.options?.length)
+    .map((s) => ({ key: s.key, car: s.car, o: s.options[0] }));
+  const arriveKey = (o) => o.arriveHome
+    ? `${o.arriveDate}T${o.arriveHome}`
+    : `${o.arriveGavDate}T${o.arriveGav}`;
+  rows.sort((a, b) => arriveKey(a.o).localeCompare(arriveKey(b.o)));
+  return rows;
+}
 
 function renderHero() {
   const el = $('#heroLine');
@@ -456,18 +469,28 @@ function renderHero() {
       render = () => { el.textContent = '🚆 אין רכבות מתחנת הבית כרגע — נבדוק שוב בעדכון הבא'; };
     } else {
       const best = state.workPlan.best;
+      const rows = heroStationRows(state.workPlan);
       const carMin = state.workPlan.stations.find((s) => s.key === best.stationKey)?.car?.min;
       const day = best.depDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.depDate)}</span> ` : '';
       const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
       const later = state.workPlan.next.slice(1, 3).map((o) => o.depHome).join(' · ');
-      sig = `to/${best.depDate}T${best.depHome}/${best.stationKey}/${best.arriveStation}/${best.arriveGav}/${best.changes}/${later}`;
+      sig = `to/${best.depDate}T${best.depHome}/${best.stationKey}/${best.arriveStation}/${best.arriveGav}/${best.changes}/` +
+        rows.map((r) => `${r.key}${r.o.arriveStation}${r.o.arriveGav}${r.o.depHome}`).join('-') + `/${later}`;
       hasData = true;
       render = () => {
         el.appendChild(big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`));
         el.appendChild(doLine(`🏢 בגב-ים ≈<b><bdi>${gavDay}${best.arriveGav}</bdi></b>`));
-        el.appendChild(detail(`→ ${stationShort(best.stationKey)} ${best.arriveStation}` +
-          (carMin ? ` · 🚕 ~${carMin} דק׳ משם` : '') +
+        el.appendChild(detail(`דרך ${stationShort(best.stationKey)} · מגיע ${best.arriveStation}` +
+          (carMin ? ` · 🚕 ~${carMin} דק׳` : '') +
           (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        for (const r of rows) {
+          if (r.key === best.stationKey) continue;
+          el.appendChild(optLine(`גם דרך ${stationShort(r.key)}: ` +
+            (r.o.depHome !== best.depHome ? `רכבת ${r.o.depHome} · ` : '') +
+            `מגיע ${r.o.arriveStation}` +
+            (r.car?.min ? ` · 🚕 ~${r.car.min} דק׳` : '') +
+            ` · בגב-ים ${r.o.arriveGav}`));
+        }
         if (later) el.appendChild(altLine('עוד מהבית: ' + later));
       };
     }
@@ -483,16 +506,22 @@ function renderHero() {
       render = () => { el.textContent = '🏠 אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא'; };
     } else {
       const best = state.homePlan.best;
+      const rows = heroStationRows(state.homePlan);
       const homeShort = home.name.split(' - ')[0];
       const day = best.arriveDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.arriveDate)}</span> ` : '';
       const later = state.homePlan.next.slice(1, 3).map((o) => o.arriveHome).join(' · ');
-      sig = `from/${best.arriveDate}T${best.arriveHome}/${best.leaveBy}/${best.trainDeparture}/${best.stationKey}/${best.changes}/${later}`;
+      sig = `from/${best.arriveDate}T${best.arriveHome}/${best.leaveBy}/${best.trainDeparture}/${best.stationKey}/${best.changes}/` +
+        rows.map((r) => `${r.key}${r.o.arriveHome}${r.o.leaveBy}${r.o.trainDeparture}`).join('-') + `/${later}`;
       hasData = true;
       render = () => {
         el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
         el.appendChild(doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`));
         el.appendChild(detail(`🚆 ${best.trainDeparture} · ${stationShort(best.stationKey)} → ${homeShort}` +
           (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר')));
+        for (const r of rows) {
+          if (r.key === best.stationKey) continue;
+          el.appendChild(optLine(`גם דרך ${stationShort(r.key)}: רכבת ${r.o.trainDeparture} · בבית ${r.o.arriveHome} (צאו עד ${r.o.leaveBy})`));
+        }
         if (later) el.appendChild(altLine('עוד: ' + later));
       };
     }
