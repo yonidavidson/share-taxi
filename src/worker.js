@@ -467,24 +467,44 @@ function homeOptionFromTravel(travel, key, carMin, nameById) {
   };
 }
 
-// רציף עלייה בתחנת המוצא + פרטי החלפה (תחנה, רציפים, שעת הרכבת המחברת)
+// רציף עלייה בתחנת המוצא + פרטי החלפה (תחנה, רציפים, זמן המתנה, שעת הרכבת המחברת)
 function legInfo(travel, nameById) {
   const trains = travel?.trains ?? [];
   const first = trains[0];
   if (!first) return {};
-  const out = { boardPlatform: first.originPlatform > 0 ? first.originPlatform : null };
-  if (trains.length > 1) {
-    const second = trains[1];
-    const stationId = first.destinationStation;
-    out.transfer = {
+  const shortName = (id) => {
+    const n = nameById?.[id];
+    return n ? n.split(" - ")[0] : null;
+  };
+  const terminusId = (leg) => {
+    const rs = leg?.routeStations ?? [];
+    return rs.length ? rs[rs.length - 1].stationId : null;
+  };
+  const out = {
+    boardPlatform: first.originPlatform > 0 ? first.originPlatform : null,
+    towards: shortName(terminusId(first)),
+  };
+  const transfers = [];
+  for (let i = 1; i < trains.length; i++) {
+    const prev = trains[i - 1];
+    const next = trains[i];
+    const stationId = prev.destinationStation;
+    const arrMs = Date.parse(prev.arrivalTime);
+    const depMs = Date.parse(next.departureTime);
+    transfers.push({
       stationId,
       stationName: nameById?.[stationId] ?? null,
-      arrivePlatform: first.destPlatform > 0 ? first.destPlatform : null,
-      departPlatform: second.originPlatform > 0 ? second.originPlatform : null,
-      departTime: String(second.departureTime).slice(11, 16),
-      train: second.trainNumber ?? null,
-    };
+      arrivePlatform: prev.destPlatform > 0 ? prev.destPlatform : null,
+      departPlatform: next.originPlatform > 0 ? next.originPlatform : null,
+      departTime: String(next.departureTime).slice(11, 16),
+      waitMin: Number.isFinite(arrMs) && Number.isFinite(depMs)
+        ? Math.max(0, Math.round((depMs - arrMs) / 60000))
+        : null,
+      towards: shortName(terminusId(next)),
+      train: next.trainNumber ?? null,
+    });
   }
+  if (transfers.length) out.transfers = transfers;
   return out;
 }
 

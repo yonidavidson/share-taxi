@@ -444,19 +444,67 @@ function transferText(t) {
   const parts = [];
   if (t.arrivePlatform) parts.push(`יורדים ברציף ${t.arrivePlatform}`);
   if (t.departPlatform) parts.push(`עולים ברציף ${t.departPlatform}`);
+  if (Number.isFinite(t.waitMin)) parts.push(`המתנה ${t.waitMin} דק׳`);
   return `החלפה ב${name || 'תחנת מעבר'}` +
     (parts.length ? ` · ${parts.join(' · ')}` : '') +
-    (t.departTime ? ` · הרכבת ב-${t.departTime}` : '');
+    (t.departTime ? ` · הרכבת ב-${t.departTime}` : '') +
+    (t.towards ? ` · לכיוון ${t.towards}` : '');
 }
 
-function optBlock(prefix, mainText, transfer) {
+// כל ההחלפות של אפשרות (תאימות גם למטמון ישן עם transfer בודד)
+function transfersOf(o) {
+  if (Array.isArray(o.transfers)) return o.transfers;
+  return o.transfer ? [o.transfer] : [];
+}
+
+// ספירה לאחור לזמן מפתח (לפי שעון ישראל) — מוצגת רק עד 3 שעות לפני
+function israelOffsetMs(epochMs) {
+  const p = {};
+  for (const x of new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(epochMs))) p[x.type] = x.value;
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return asUtc - Math.floor(epochMs / 1000) * 1000;
+}
+
+function minsUntil(dateStr, hhmm) {
+  if (!dateStr || !hhmm) return null;
+  const guess = Date.parse(`${dateStr}T${hhmm}:00Z`);
+  if (!Number.isFinite(guess)) return null;
+  const epoch = guess - israelOffsetMs(guess);
+  return Math.round((epoch - Date.now()) / 60000);
+}
+
+function countdownEl(dateStr, hhmm) {
+  const mins = minsUntil(dateStr, hhmm);
+  if (mins == null || mins > 180) return null;
+  const span = document.createElement('span');
+  span.className = 'hero-cd';
+  span.dataset.date = dateStr;
+  span.dataset.time = hhmm;
+  span.textContent = mins <= 1 ? 'עכשיו' : `בעוד ${mins} דק׳`;
+  if (mins <= 7) span.classList.add('soon');
+  return span;
+}
+
+function updateCountdowns() {
+  for (const el of document.querySelectorAll('.hero-cd')) {
+    const mins = minsUntil(el.dataset.date, el.dataset.time);
+    if (mins == null || mins > 180) { el.remove(); continue; }
+    el.textContent = mins <= 1 ? 'עכשיו' : `בעוד ${mins} דק׳`;
+    el.classList.toggle('soon', mins <= 7);
+  }
+}
+
+function optBlock(prefix, mainText, transfers) {
   const wrapEl = document.createElement('div');
   wrapEl.className = 'hero-opt';
   const main = document.createElement('div');
   main.className = 'hero-opt-main';
   main.textContent = prefix + mainText;
   wrapEl.appendChild(main);
-  if (transfer) wrapEl.appendChild(optSub(transferText(transfer)));
+  for (const t of transfers ?? []) wrapEl.appendChild(optSub(transferText(t)));
   return wrapEl;
 }
 
@@ -477,12 +525,13 @@ function oSig(o) {
   return [
     o.depHome ?? o.trainDeparture ?? '', o.arriveStation ?? o.arriveHome ?? '',
     o.arriveGav ?? '', o.leaveBy ?? '', o.boardPlatform ?? '',
-    o.transfer ? `${o.transfer.stationId}:${o.transfer.arrivePlatform}:${o.transfer.departPlatform}:${o.transfer.departTime}` : '',
+    transfersOf(o).map((t) => `${t.stationId}:${t.arrivePlatform}:${t.departPlatform}:${t.departTime}:${t.waitMin}`).join('+'),
   ].join('|');
 }
 
 function renderHero() {
   const el = $('#heroLine');
+  updateCountdowns();
   let sig;
   let render;
   let hasData = false;
@@ -508,13 +557,17 @@ function renderHero() {
       sig = `to/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
       hasData = true;
       render = () => {
-        el.appendChild(big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`));
+        const bigEl = big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`);
+        const cd = countdownEl(best.depDate, best.depHome);
+        if (cd) bigEl.appendChild(cd);
+        el.appendChild(bigEl);
         el.appendChild(doLine(`🏢 בגב-ים ≈<b><bdi>${gavDay}${best.arriveGav}</bdi></b>`));
         el.appendChild(detail((best.boardPlatform ? `רציף ${best.boardPlatform} ב${homeShort} · ` : '') +
-          (best.transfer ? '' : `דרך ${stationShort(best.stationKey)} · `) +
+          (best.train && best.towards ? `רכבת ${best.train} לכיוון ${best.towards} · ` : '') +
+          (transfersOf(best).length ? '' : `דרך ${stationShort(best.stationKey)} · `) +
           `מגיע ${best.arriveStation}` +
           (carMin ? ` · 🚕 ~${carMin} דק׳` : '')));
-        if (best.transfer) el.appendChild(optSub(transferText(best.transfer)));
+        for (const t of transfersOf(best)) el.appendChild(optSub(transferText(t)));
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
           el.appendChild(optBlock(`גם דרך ${stationShort(r.key)}: `,
@@ -522,7 +575,7 @@ function renderHero() {
             `מגיע ${r.o.arriveStation}` +
             (r.car?.min ? ` · 🚕 ~${r.car.min} דק׳` : '') +
             ` · בגב-ים ${r.o.arriveGav}`,
-            r.o.transfer));
+            transfersOf(r.o)));
         }
         if (later) el.appendChild(altLine('עוד מהבית: ' + later));
       };
@@ -547,17 +600,21 @@ function renderHero() {
       hasData = true;
       render = () => {
         el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
-        el.appendChild(doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`));
+        const doEl = doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`);
+        const cd = countdownEl(best.leaveByDate, best.leaveBy);
+        if (cd) doEl.appendChild(cd);
+        el.appendChild(doEl);
         el.appendChild(detail(`🚆 ${best.trainDeparture}` +
           (best.boardPlatform ? ` · רציף ${best.boardPlatform}` : '') +
+          (best.towards ? ` · לכיוון ${best.towards}` : '') +
           ` · ${stationShort(best.stationKey)} → ${homeShort}` +
-          (best.transfer ? '' : ' · ישיר')));
-        if (best.transfer) el.appendChild(optSub(transferText(best.transfer)));
+          (transfersOf(best).length ? '' : ' · ישיר')));
+        for (const t of transfersOf(best)) el.appendChild(optSub(transferText(t)));
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
           el.appendChild(optBlock(`גם דרך ${stationShort(r.key)}: `,
             `רכבת ${r.o.trainDeparture} · בבית ${r.o.arriveHome} (צאו עד ${r.o.leaveBy})`,
-            r.o.transfer));
+            transfersOf(r.o)));
         }
         if (later) el.appendChild(altLine('עוד: ' + later));
       };
