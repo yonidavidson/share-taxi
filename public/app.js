@@ -61,6 +61,7 @@ const state = {
   filter: 'all', // 'all' | מפתח תחנה
   dir: 'all', // 'all' | 'to' | 'from'
   loading: false,
+  cars: null, // זמני נסיעה (עם תנועה) לפי תחנה — מגיע מ-/api/info
 };
 
 let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
@@ -194,8 +195,9 @@ function renderCard(post) {
   const when = el.querySelector('.when');
   const flex = post.flexible ? ` <span>(<bdi>${esc(post.flexible)}</bdi>)</span>` : '';
   const stationKey = postStation(post);
-  const taxi = stationKey && TAXI[stationKey]
-    ? ` <span class="taxi-hint" title="הערכת נסיעה ברכב/מונית בין התחנה לגב-ים">· 🚕 ≈${TAXI[stationKey].min} דק׳</span>`
+  const car = stationKey ? (state.cars?.[stationKey] ?? TAXI[stationKey]) : null;
+  const taxi = car
+    ? ` <span class="taxi-hint" data-key="${esc(stationKey)}" title="זמן נסיעה משוער ברכב/מונית בין התחנה לגב-ים">· 🚕 ≈${car.min} דק׳</span>`
     : '';
   when.innerHTML = `⏰ <b>${esc(post.time)}</b>${flex}${taxi}`;
 
@@ -248,6 +250,13 @@ function renderCard(post) {
   }
 
   return el.firstElementChild;
+}
+
+function updateTaxiHints() {
+  for (const el of document.querySelectorAll('.taxi-hint[data-key]')) {
+    const car = state.cars?.[el.dataset.key] ?? TAXI[el.dataset.key];
+    if (car) el.textContent = `· 🚕 ≈${car.min} דק׳`;
+  }
 }
 
 async function sendComment(postId, text) {
@@ -324,7 +333,8 @@ function infoStationCard(station, meta) {
   if (station.car) {
     const taxi = document.createElement('div');
     taxi.className = 'taxi';
-    taxi.textContent = `🚕 ≈${station.car.min} דק׳ נסיעה · ${station.car.km} ק״מ`;
+    taxi.textContent = `🚕 ≈${station.car.min} דק׳ נסיעה · ${station.car.km} ק״מ` +
+      (station.car.live ? ' · זמן אמת' : ' · הערכה');
     card.appendChild(taxi);
   }
 
@@ -362,6 +372,11 @@ function renderInfo(payload) {
   } else {
     statsEl.textContent = '';
   }
+
+  state.cars = Object.fromEntries(
+    (info?.stations ?? []).filter((st) => st.car).map((st) => [st.key, st.car])
+  );
+  updateTaxiHints();
 
   const byKey = Object.fromEntries(STATIONS.map((st) => [st.key, st]));
   $('#infoGrid').replaceChildren(

@@ -36,6 +36,102 @@ const STATIONS_CACHE_TTL_S = 24 * 60 * 60; // רשימת התחנות משתנה
 const HOME_CACHE_PREFIX = "home_cache_v1_";
 const HOME_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הביתה מתרעננת כל 3 דקות
 
+// ------------------------------------------------------------------
+// זמני נסיעה ברכב/מונית — תנועה בזמן אמת מ-TomTom (אם הוגדר מפתח),
+// אחרת הערכת עומס טיפוסית לפי שעה (עם סימון "הערכה" ב-UI).
+// ------------------------------------------------------------------
+const TOMTOM_BASE = "https://api.tomtom.com/routing/1/calculateRoute";
+const TRAFFIC_CACHE_KEY = "traffic_cache_v1";
+const TRAFFIC_TTL_MS = 10 * 60 * 1000; // תנועה מתרעננת כל 10 דקות
+const STATION_COORDS = {
+  raananaSouth: { lat: 32.172592, lon: 34.886196 },
+  raananaWest: { lat: 32.180012, lon: 34.850805 },
+  herzliya: { lat: 32.16380406924, lon: 34.81844813817 },
+};
+const GAV_YAM_COORD = { lat: 32.1942096, lon: 34.8824513 };
+
+// מקדמי עומס אופייניים בישראל (ימי חול): שיא בוקר, צהריים, שיא ערב; שישי/שבת שונים
+function typicalTrafficFactor() {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem", weekday: "short", hour: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date())) parts[p.type] = p.value;
+  const weekday = parts.weekday;
+  const hour = Number(parts.hour ?? 12);
+  if (weekday === "Fri") return hour >= 8 && hour < 14 ? 1.2 : 1.0;
+  if (weekday === "Sat") return 1.0;
+  if (hour >= 7 && hour < 9) return 1.5;
+  if (hour >= 9 && hour < 11) return 1.3;
+  if (hour >= 11 && hour < 15) return 1.15;
+  if (hour >= 15 && hour < 19) return 1.45;
+  if (hour >= 19 && hour < 21) return 1.15;
+  return 1.0;
+}
+
+function fallbackCars() {
+  const factor = typicalTrafficFactor();
+  const out = {};
+  for (const [key, base] of Object.entries(CAR_ESTIMATES)) {
+    out[key] = { km: base.km, min: Math.max(base.min, Math.ceil(base.min * factor)), live: false };
+  }
+  return out;
+}
+
+async function fetchTomTomTraffic(apiKey) {
+  const cars = {};
+  const results = await Promise.allSettled(
+    Object.entries(STATION_COORDS).map(async ([key, c]) => {
+      const url = `${TOMTOM_BASE}/${c.lat},${c.lon}:${GAV_YAM_COORD.lat},${GAV_YAM_COORD.lon}` +
+        `/json?key=${encodeURIComponent(apiKey)}&traffic=true&routeType=fastest&travelMode=car&computeTravelTimeFor=all`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`tomtom HTTP ${res.status}`);
+      const body = await res.json();
+      const summary = body?.routes?.[0]?.summary;
+      if (!summary || !Number.isFinite(summary.travelTimeInSeconds)) throw new Error("tomtom no route");
+      return [key, {
+        km: Math.round((summary.lengthInMeters / 1000) * 10) / 10,
+        min: Math.max(1, Math.ceil(summary.travelTimeInSeconds / 60)),
+        live: true,
+        trafficDelaySec: Number.isFinite(summary.trafficDelayInSeconds) ? summary.trafficDelayInSeconds : 0,
+      }];
+    })
+  );
+  for (const r of results) {
+    if (r.status === "fulfilled") cars[r.value[0]] = r.value[1];
+    else console.error("tomtom leg failed:", r.reason?.message ?? r.reason);
+  }
+  return cars;
+}
+
+// זמני נסיעה לכל שלוש התחנות (אל גב-ים). מטמון KV רק לנתוני אמת.
+async function getCarEstimates(env) {
+  const apiKey = env.TOMTOM_API_KEY;
+  if (!apiKey) return fallbackCars();
+
+  let cached = null;
+  try {
+    const raw = await env.SHARE_TAXI_KV.get(TRAFFIC_CACHE_KEY);
+    if (raw) cached = JSON.parse(raw);
+  } catch { /* מטמון פגום — מרעננים */ }
+
+  if (cached && Date.now() - cached.at < TRAFFIC_TTL_MS && cached.cars) return cached.cars;
+
+  try {
+    const live = await fetchTomTomTraffic(apiKey);
+    const cars = {};
+    const fallback = fallbackCars();
+    for (const key of Object.keys(CAR_ESTIMATES)) cars[key] = live[key] ?? fallback[key];
+    await env.SHARE_TAXI_KV.put(TRAFFIC_CACHE_KEY, JSON.stringify({ at: Date.now(), cars }), {
+      expirationTtl: 3600,
+    });
+    return cars;
+  } catch (err) {
+    console.error("live traffic failed:", err);
+    if (cached?.cars) return cached.cars;
+    return fallbackCars();
+  }
+}
+
 const ADJECTIVES = [
   "נוסע ענייני", "חבר מסלול", "שותף שקט", "מרחף קליל", "גלגל שינוע",
   "שועל מהיר", "תרנגול בוקר", "דבור מסודר", "ג׳ירפה גבוהה", "פינגווין נחוש",
@@ -267,9 +363,10 @@ async function buildStationBoard(key, stationId, date, hour) {
 
 async function buildInfo(env) {
   const { date, hour } = israelNow();
-  const stations = await Promise.all(
-    Object.entries(STATION_IDS).map(([key, stationId]) => buildStationBoard(key, stationId, date, hour))
-  );
+  const [stations, cars] = await Promise.all([
+    Promise.all(Object.entries(STATION_IDS).map(([key, stationId]) => buildStationBoard(key, stationId, date, hour))),
+    getCarEstimates(env),
+  ]);
 
   const all = stations.flatMap((s) => [...s.arrivals, ...s.departures]);
   const total = all.length;
@@ -280,7 +377,7 @@ async function buildInfo(env) {
     updatedAt: Date.now(),
     date,
     hour,
-    stations: stations.map((s) => ({ ...s, car: CAR_ESTIMATES[s.key] ?? null })),
+    stations: stations.map((s) => ({ ...s, car: cars[s.key] ?? null })),
     stats: { total, onTime, avgDelay },
   };
 }
@@ -369,10 +466,11 @@ function homeOptionFromTravel(travel, key, carMin) {
 
 async function buildHomePlan(env, homeId) {
   const { date, hour } = israelNow();
+  const cars = await getCarEstimates(env);
   const results = await Promise.allSettled(
     Object.entries(STATION_IDS).map(async ([key, stationId]) => {
-      if (stationId === homeId) return { key, car: CAR_ESTIMATES[key] ?? null, options: [] };
-      const car = CAR_ESTIMATES[key] ?? { km: 0, min: 10 };
+      if (stationId === homeId) return { key, car: cars[key] ?? null, options: [] };
+      const car = cars[key] ?? { km: 0, min: 10 };
       const buf = addMinutes(date, hour, car.min + 2);
       const travels = await searchTrains(stationId, homeId, buf.date, buf.hour);
       const options = travels
