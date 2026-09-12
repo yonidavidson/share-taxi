@@ -149,7 +149,7 @@ body {
   transform: rotate(-1.5deg);
 }
 .toolbar-actions { display: flex; gap: 10px; }
-.info-head-actions { display: flex; align-items: center; gap: 6px; }
+.info-head-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 6px; }
 .icon-btn {
   border: 2px solid #000; background: #101014; color: #d8d8de;
   border-radius: 999px; padding: 3px 10px;
@@ -305,8 +305,8 @@ body {
   box-shadow: var(--hard-shadow);
   padding: 14px 16px 12px;
 }
-.info-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.info-title { font-family: "Secular One", sans-serif; font-size: 17px; }
+.info-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.info-title { font-family: "Secular One", sans-serif; font-size: 16px; }
 .info-toggle {
   border: 2px solid #000; background: #101014; color: #d8d8de;
   border-radius: 999px; padding: 3px 12px;
@@ -314,46 +314,28 @@ body {
   cursor: pointer;
 }
 .info-toggle:hover { color: var(--gta-yellow); }
-.info-stats { color: #d8d8de; font-size: 13.5px; font-weight: 600; margin-top: 6px; }
+.info-stats { color: #d8d8de; font-size: 12.5px; font-weight: 600; }
 .info-stats:empty { display: none; }
-.info-grid { display: grid; gap: 10px; margin-top: 10px; }
-@media (min-width: 640px) { .info-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 639px) {
-  /* קרוסלה אופקית במובייל — כדי שהלוח והכפתור הראשי יישארו קרובים למסך הראשון */
-  .info-grid {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    padding-bottom: 4px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .info-grid::-webkit-scrollbar { display: none; }
-  .info-card { flex: 0 0 84%; scroll-snap-align: start; }
+.info-grid { display: grid; gap: 6px; margin-top: 10px; }
+.info-row {
+  display: grid; gap: 4px;
+  background: #101014; border: 2px solid #000; border-radius: 6px;
+  padding: 7px 10px;
 }
-.info-card {
-  background: #101014;
-  border: 2px solid #000;
-  border-radius: 8px;
-  box-shadow: var(--hard-shadow-sm);
-  padding: 10px 12px;
-}
-.info-card h2 { margin: 0 0 4px; font-size: 15px; font-family: "Secular One", sans-serif; }
-.info-card .taxi { color: var(--gta-yellow); font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
-.tr-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.tr-lab { color: var(--muted); font-size: 12px; font-weight: 700; }
-.tr {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: #1d1d22; border: 2px solid #000; border-radius: 999px;
-  padding: 2px 9px; font-size: 12.5px; font-weight: 700;
-}
-.tr .plat { color: #b9b9c3; font-style: normal; font-size: 11px; font-weight: 600; }
-.tr .ok { color: var(--teal); font-style: normal; font-size: 11px; font-weight: 700; }
-.tr .late { color: #ffb020; font-style: normal; font-size: 11px; font-weight: 700; }
-.tr .cancel { color: #ff6b70; font-style: normal; font-size: 11px; font-weight: 700; }
-.tr-none { color: var(--muted); font-size: 12px; }
-.info-foot { color: #8b8b95; font-size: 11.5px; margin-top: 10px; }
-.info.collapsed .info-stats, .info.collapsed .info-grid, .info.collapsed .info-foot { display: none; }
+.ir-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ir-name { font-family: "Secular One", sans-serif; font-size: 13.5px; }
+.ir-taxi { color: var(--gta-yellow); font-size: 11.5px; font-weight: 700; }
+.ir-day { color: var(--muted); font-size: 11.5px; font-weight: 700; margin-inline-start: auto; }
+.ir-times { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12.5px; font-weight: 700; }
+.ir-group { display: inline-flex; align-items: center; gap: 5px; }
+.ir-dir { color: var(--muted); font-size: 11px; }
+.ir-sep { color: #3a3a44; }
+.ir-none { color: var(--muted); }
+.ir-time.late { color: #ffb020; }
+.ir-time.cancel { color: #ff6b70; text-decoration: line-through; }
+.info-foot { color: #8b8b95; font-size: 11.5px; margin-top: 8px; }
+.info.collapsed .info-grid, .info.collapsed .info-foot { display: none; }
+.info.collapsed { padding: 10px 12px; }
 
 /* ---------- תחנת הבית ---------- */
 .home-bar {

@@ -35,6 +35,8 @@ const STATIONS_CACHE_KEY = "stations_cache_v1";
 const STATIONS_CACHE_TTL_S = 24 * 60 * 60; // רשימת התחנות משתנה לעיתים רחוקות
 const HOME_CACHE_PREFIX = "home_cache_v1_";
 const HOME_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הביתה מתרעננת כל 3 דקות
+const WORK_CACHE_PREFIX = "work_cache_v1_";
+const WORK_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הבוקר מתרעננת כל 3 דקות
 
 // ------------------------------------------------------------------
 // זמני נסיעה ברכב/מונית — תנועה בזמן אמת מ-TomTom (אם הוגדר מפתח),
@@ -532,6 +534,92 @@ async function getHomePlan(env, homeId) {
 }
 
 // ------------------------------------------------------------------
+// מתכנן בוקר — מהבית לעבודה: רכבות מתחנת הבית אל שלוש התחנות
+// ------------------------------------------------------------------
+function workOptionFromTravel(travel, key, carMin) {
+  const trains = travel?.trains ?? [];
+  if (!trains.length) return null;
+  const dep = String(travel.departureTime);
+  const arr = String(travel.arrivalTime);
+  const gav = addMinutes(arr.slice(0, 10), arr.slice(11, 16), carMin + 2);
+  return {
+    stationKey: key,
+    train: trains[0].trainNumber ?? null,
+    changes: Math.max(0, trains.length - 1),
+    depHome: dep.slice(11, 16),
+    depDate: dep.slice(0, 10),
+    arriveStation: arr.slice(11, 16),
+    arriveStationDate: arr.slice(0, 10),
+    arriveGav: gav.hour,
+    arriveGavDate: gav.date,
+  };
+}
+
+async function buildWorkPlan(env, homeId) {
+  const { date, hour } = israelNow();
+  const cars = await getCarEstimates(env);
+  const results = await Promise.allSettled(
+    Object.entries(STATION_IDS).map(async ([key, stationId]) => {
+      if (stationId === homeId) return { key, car: cars[key] ?? null, options: [] };
+      const car = cars[key] ?? { km: 0, min: 10 };
+      const travels = await searchTrains(homeId, stationId, date, hour);
+      const options = travels
+        .map((t) => workOptionFromTravel(t, key, car.min))
+        .filter(Boolean)
+        .filter((o) => `${o.depDate}T${o.depHome}` >= `${date}T${hour}`)
+        .filter((o) => `${o.arriveGavDate}T${o.arriveGav}` >= `${date}T${hour}`)
+        .slice(0, 2);
+      return { key, car, options };
+    })
+  );
+
+  const stations = [];
+  for (const [i, r] of results.entries()) {
+    const key = Object.keys(STATION_IDS)[i];
+    if (r.status === "fulfilled") stations.push(r.value);
+    else console.error(`work plan ${key} failed:`, r.reason?.message ?? r.reason);
+  }
+
+  const all = stations
+    .flatMap((s) => s.options)
+    .sort((a, b) => `${a.arriveGavDate}T${a.arriveGav}`.localeCompare(`${b.arriveGavDate}T${b.arriveGav}`));
+  const seen = new Set();
+  const next = [];
+  for (const o of all) {
+    const k = `${o.arriveGavDate}T${o.arriveGav}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    next.push(o);
+    if (next.length >= 4) break;
+  }
+  return { updatedAt: Date.now(), date, hour, homeId, stations, next, best: next[0] ?? null };
+}
+
+async function getWorkPlan(env, homeId) {
+  const cacheKey = WORK_CACHE_PREFIX + homeId;
+  let cached = null;
+  try {
+    const raw = await env.SHARE_TAXI_KV.get(cacheKey);
+    if (raw) cached = JSON.parse(raw);
+  } catch { /* מטמון פגום — מרעננים */ }
+
+  if (cached && Date.now() - cached.at < WORK_CACHE_TTL_MS) {
+    return { plan: cached.plan, cachedAt: cached.at, stale: false };
+  }
+  try {
+    const plan = await buildWorkPlan(env, homeId);
+    await env.SHARE_TAXI_KV.put(cacheKey, JSON.stringify({ at: Date.now(), plan }), {
+      expirationTtl: 3600,
+    });
+    return { plan, cachedAt: Date.now(), stale: false };
+  } catch (err) {
+    console.error("buildWorkPlan failed:", err);
+    if (cached) return { plan: cached.plan, cachedAt: cached.at, stale: true };
+    return null;
+  }
+}
+
+// ------------------------------------------------------------------
 // Router
 // ------------------------------------------------------------------
 export default {
@@ -560,6 +648,15 @@ async function handleApi(request, env, url) {
   const { pathname } = url;
   const method = request.method;
   const token = clientToken(request);
+
+  // GET /api/work?from=<stationId> — מסלול הבוקר: מהבית לעבודה
+  if (method === "GET" && pathname === "/api/work") {
+    const from = Number(url.searchParams.get("from"));
+    if (!Number.isInteger(from) || from <= 0) return json({ error: "חסר יעד" }, 400);
+    const result = await getWorkPlan(env, from);
+    if (!result) return json({ error: "מידע הבוקר לא זמין כרגע" }, 502);
+    return json(result);
+  }
 
   // GET /api/home?to=<stationId> — מתי מגיעים הביתה דרך שלוש התחנות
   if (method === "GET" && pathname === "/api/home") {

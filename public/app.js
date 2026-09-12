@@ -64,6 +64,7 @@ const state = {
   cars: null, // זמני נסיעה (עם תנועה) לפי תחנה — מגיע מ-/api/info
   info: null, // תגובת /api/info האחרונה (עבור שורת ה-hero)
   homePlan: null, // תוכנית "מתי בבית" האחרונה
+  workPlan: null, // תוכנית הבוקר (מהבית לעבודה) האחרונה
 };
 
 let direction = 'toG'; // toG = תחנה → גב-ים, fromG = גב-ים → תחנה
@@ -167,7 +168,7 @@ function render() {
   for (const [date, posts] of [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const group = document.createElement('section');
     group.className = 'day-group';
-    const h = document.createElement('h3');
+    const h = document.createElement('h2');
     h.className = 'day-label';
     h.textContent = dayLabel(date);
     group.appendChild(h);
@@ -284,82 +285,81 @@ function shortDay(dateStr) {
   return new Intl.DateTimeFormat('he-IL', { weekday: 'short' }).format(parseYMD(dateStr));
 }
 
-function trainChip(t) {
-  const chip = document.createElement('span');
-  chip.className = 'tr';
-
-  const when = document.createElement('span');
-  const day = t.date && t.date !== todayYMD() ? shortDay(t.date) : '';
-  when.textContent = `${day ? `${day} ` : ''}${t.time}`;
-  chip.appendChild(when);
-
-  if (t.platform) {
-    const p = document.createElement('i');
-    p.className = 'plat';
-    p.textContent = `רצ׳ ${t.platform}`;
-    chip.appendChild(p);
-  }
-  if (t.changes > 0) {
-    const c = document.createElement('i');
-    c.className = 'plat';
-    c.textContent = 'החלפה';
-    chip.appendChild(c);
-  }
-
-  const badge = document.createElement('em');
+function trainTime(t) {
+  const el = document.createElement('bdi');
+  el.className = 'ir-time';
+  el.textContent = t.time;
   if (t.cancelled) {
-    badge.className = 'cancel';
-    badge.textContent = 'בוטלה';
-  } else {
-    const delay = Number.isFinite(t.delay) ? t.delay : 0;
-    if (delay > DELAY_ON_TIME_MAX) {
-      badge.className = 'late';
-      badge.textContent = `מאחרת ${delay}׳`;
-    } else {
-      badge.className = 'ok';
-      badge.textContent = 'בזמן';
-    }
+    el.classList.add('cancel');
+    el.title = 'בוטלה';
+  } else if (Number.isFinite(t.delay) && t.delay > DELAY_ON_TIME_MAX) {
+    el.classList.add('late');
+    el.title = `מאחרת ${t.delay} דק׳`;
+  } else if (t.platform) {
+    el.title = `רציף ${t.platform}`;
   }
-  chip.appendChild(badge);
-  return chip;
+  return el;
 }
 
-function infoStationCard(station, meta) {
-  const card = document.createElement('article');
-  card.className = 'info-card';
-  const h = document.createElement('h2');
-  h.textContent = `🚆 ${meta.short}`;
-  card.appendChild(h);
+function infoStationRow(station, meta) {
+  const row = document.createElement('article');
+  row.className = 'info-row';
+
+  const top = document.createElement('span');
+  top.className = 'ir-top';
+
+  const name = document.createElement('span');
+  name.className = 'ir-name';
+  name.textContent = `🚆 ${meta.short}`;
+  top.appendChild(name);
 
   if (station.car) {
-    const taxi = document.createElement('div');
-    taxi.className = 'taxi';
-    taxi.textContent = `🚕 ≈${station.car.min} דק׳ נסיעה · ${station.car.km} ק״מ` +
-      (station.car.live ? ' · זמן אמת' : ' · הערכה');
-    card.appendChild(taxi);
+    const taxi = document.createElement('span');
+    taxi.className = 'ir-taxi';
+    taxi.textContent = `🚕 ${station.car.min}׳`;
+    taxi.title = `≈${station.car.min} דק׳ נסיעה · ${station.car.km} ק״מ` + (station.car.live ? ' · זמן אמת' : ' · הערכה');
+    top.appendChild(taxi);
   }
 
-  for (const [label, items] of [
-    ['⬇️ מגיעות מת״א', station.arrivals],
-    ['⬆️ יוצאות לת״א', station.departures],
-  ]) {
-    const line = document.createElement('div');
-    line.className = 'tr-line';
-    const lab = document.createElement('span');
-    lab.className = 'tr-lab';
-    lab.textContent = label;
-    line.appendChild(lab);
-    if (items.length) {
-      for (const t of items) line.appendChild(trainChip(t));
-    } else {
-      const none = document.createElement('span');
-      none.className = 'tr-none';
-      none.textContent = 'אין נתונים';
-      line.appendChild(none);
-    }
-    card.appendChild(line);
+  const first = [...station.arrivals, ...station.departures][0];
+  if (first && first.date && first.date !== todayYMD()) {
+    const day = document.createElement('span');
+    day.className = 'ir-day';
+    day.textContent = shortDay(first.date);
+    top.appendChild(day);
   }
-  return card;
+  row.appendChild(top);
+
+  const times = document.createElement('span');
+  times.className = 'ir-times';
+  for (const [arrow, label, items] of [['⬇️', 'מגיעות לתחנה', station.arrivals], ['⬆️', 'יוצאות מהתחנה', station.departures]]) {
+    const group = document.createElement('span');
+    group.className = 'ir-group';
+    group.title = label;
+    const dir = document.createElement('span');
+    dir.className = 'ir-dir';
+    dir.textContent = arrow;
+    group.appendChild(dir);
+    if (!items.length) {
+      const none = document.createElement('span');
+      none.className = 'ir-none';
+      none.textContent = '—';
+      group.appendChild(none);
+    } else {
+      items.forEach((t, i) => {
+        if (i) {
+          const sep = document.createElement('span');
+          sep.className = 'ir-sep';
+          sep.textContent = '·';
+          group.appendChild(sep);
+        }
+        group.appendChild(trainTime(t));
+      });
+    }
+    times.appendChild(group);
+  }
+  row.appendChild(times);
+  return row;
 }
 
 function renderInfo(payload) {
@@ -381,12 +381,13 @@ function renderInfo(payload) {
 
   const byKey = Object.fromEntries(STATIONS.map((st) => [st.key, st]));
   $('#infoGrid').replaceChildren(
-    ...(info?.stations ?? []).filter((st) => byKey[st.key]).map((st) => infoStationCard(st, byKey[st.key]))
+    ...(info?.stations ?? []).filter((st) => byKey[st.key]).map((st) => infoStationRow(st, byKey[st.key]))
   );
 
   const panel = $('#infoPanel');
   panel.dataset.loaded = '1';
   panel.hidden = false;
+  if (!panel.dataset.toggled) setPanelCollapsed(!!home);
   $('#infoUpdated').textContent =
     `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${payload.stale ? ' · מטמון' : ''}`;
 
@@ -396,6 +397,7 @@ function renderInfo(payload) {
 
 async function refreshInfo() {
   refreshHomePlan(); // במקביל — לא תלוי בהצלחת לוח הרכבות
+  refreshWorkPlan();
   try {
     const res = await fetch('/api/info');
     if (!res.ok) throw new Error(`info ${res.status}`);
@@ -423,25 +425,46 @@ function setDirection(dir) {
   render();
 }
 
-function earliestArrival(info) {
-  const all = [];
-  for (const st of info?.stations ?? []) {
-    for (const a of st.arrivals ?? []) all.push({ ...a, key: st.key });
-  }
-  all.sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
-  const first = all[0];
-  if (!first) return null;
-  const day = first.date !== todayYMD() ? `${shortDay(first.date)} ` : '';
-  return { time: first.time, day, station: stationShort(first.key) };
-}
-
 function renderHero() {
   const el = $('#heroLine');
+
   if (state.dir === 'to') {
-    const next = earliestArrival(state.info);
-    el.textContent = next
-      ? `🚆 הרכבת הבאה מגיעה: ${next.day}${next.time} ל${next.station}`
-      : '🚆 לוח הרכבות החיות למטה 👇';
+    if (!home) {
+      el.textContent = '🏠 הגדירו תחנת בית — ונחשב את הדרך מהבית לעבודה';
+      return;
+    }
+    const wp = state.workPlan;
+    if (!wp) { el.textContent = '🚆 מחשבים את הדרך מהבית…'; return; }
+    if (!wp.best) { el.textContent = '🚆 אין רכבות מתחנת הבית כרגע — נבדוק שוב בעדכון הבא'; return; }
+
+    const best = wp.best;
+    const dayD = best.depDate !== todayYMD() ? `${shortDay(best.depDate)} ` : '';
+    el.replaceChildren();
+
+    const main = document.createElement('div');
+    main.className = 'hero-main';
+    main.textContent = `רכבת ${dayD}${best.depHome} מ${home.name} → ${stationShort(best.stationKey)} ${best.arriveStation}`;
+    el.appendChild(main);
+
+    const carMin = wp.stations.find((s) => s.key === best.stationKey)?.car?.min;
+    const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
+    const sub = document.createElement('div');
+    sub.className = 'hero-sub';
+    sub.textContent = (carMin ? `🚕 ~${carMin} דק׳ משם · ` : '') +
+      `בגב-ים ≈${gavDay}${best.arriveGav}` +
+      (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
+    el.appendChild(sub);
+
+    const alts = wp.next.slice(1, 3);
+    if (alts.length) {
+      const alt = document.createElement('div');
+      alt.className = 'hero-alts';
+      alt.textContent = 'בהמשך: ' + alts.map((o) => {
+        const d = o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : '';
+        return `${d}${o.depHome} (בגב-ים ≈${o.arriveGav})`;
+      }).join(' · ');
+      el.appendChild(alt);
+    }
     return;
   }
 
@@ -468,9 +491,10 @@ function renderHero() {
   }
   el.appendChild(main);
 
+  const homeShort = home.name.split(' - ')[0];
   const sub = document.createElement('div');
   sub.className = 'hero-sub';
-  sub.textContent = `צאו מגב-ים עד ${best.leaveBy} · דרך ${stationShort(best.stationKey)} (רכבת ${best.trainDeparture})` +
+  sub.textContent = `צאו מגב-ים עד ${best.leaveBy} · רכבת ${best.trainDeparture} מ${stationShort(best.stationKey)} → ${homeShort}` +
     (best.changes > 0 ? ` · ${best.changes} החלפה` : ' · ישיר');
   el.appendChild(sub);
 
@@ -499,11 +523,31 @@ async function refreshHomePlan() {
   renderHero();
 }
 
+async function refreshWorkPlan() {
+  if (!home) { state.workPlan = null; renderHero(); return; }
+  try {
+    const res = await fetch(`/api/work?from=${home.id}`);
+    if (!res.ok) throw new Error(`work ${res.status}`);
+    const data = await res.json();
+    state.workPlan = data.plan;
+  } catch {
+    /* נשארים עם התוכנית הקודמת אם יש */
+  }
+  renderHero();
+}
+
+function setPanelCollapsed(collapsed) {
+  const panel = $('#infoPanel');
+  panel.classList.toggle('collapsed', collapsed);
+  const btn = $('#infoToggle');
+  btn.textContent = collapsed ? 'לוח תחנות ▾' : 'כיווץ ▴';
+  btn.setAttribute('aria-expanded', String(!collapsed));
+}
+
 $('#infoToggle').addEventListener('click', () => {
   const panel = $('#infoPanel');
-  const collapsed = panel.classList.toggle('collapsed');
-  $('#infoToggle').textContent = collapsed ? 'הצגה ▼' : 'כיווץ ▲';
-  $('#infoToggle').setAttribute('aria-expanded', String(!collapsed));
+  panel.dataset.toggled = '1';
+  setPanelCollapsed(!panel.classList.contains('collapsed'));
 });
 
 // ------------------------------------------------------------------
@@ -566,7 +610,8 @@ function renderHomeList(query = '') {
 }
 
 function onHomeChanged() {
-  // מתכנן "מתי בבית" (#9) יתרענן יחד עם הלוח החי
+  // מתכננים + הלוח מתרעננים; ברירת המחדל של הקיפול חוזרת לפי מצב הבית
+  $('#infoPanel').dataset.toggled = '';
   refreshInfo();
 }
 
