@@ -15,7 +15,7 @@
   <link rel="apple-touch-icon" href="/icon-180.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Rubik:wght@400;500;700;800&family=Secular+One&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;700;800&family=Secular+One&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -46,11 +46,14 @@
     </section>
 
     <section id="infoPanel" class="info" hidden aria-label="לוח מידע חי">
+      <div id="infoStale" class="info-stale" role="status" hidden></div>
       <div class="info-head">
-        <span class="info-title">🛰️ לוח חי</span>
-        <span id="infoStats" class="info-stats"></span>
+        <div class="info-head-text">
+          <span class="info-title"><span class="emoji" aria-hidden="true">🛰️</span> לוח חי</span>
+          <span id="infoStats" class="info-stats"></span>
+        </div>
         <span class="info-head-actions">
-          <button id="infoRefresh" class="icon-btn" type="button" aria-label="רענון" title="רענון">⟳</button>
+          <button id="infoRefresh" class="icon-btn" type="button" aria-label="רענון הלוח" title="רענון">⟳</button>
           <button id="infoToggle" class="info-toggle" type="button" aria-expanded="true">כיווץ ▲</button>
         </span>
       </div>
@@ -58,20 +61,26 @@
       <div id="infoUpdated" class="info-foot"></div>
     </section>
 
-    <div id="boardCount" class="board-count" hidden aria-live="polite"></div>
-    <h2 class="section-title">🚕 נסיעות משותפות</h2>
+    <div class="section-head">
+      <h2 class="section-title"><span class="emoji" aria-hidden="true">🚕</span> נסיעות משותפות</h2>
+      <div id="boardCount" class="board-count" hidden aria-live="polite"></div>
+      <span id="boardScope" class="board-scope" aria-live="polite"></span>
+    </div>
 
     <div class="board-toolbar">
       <div class="chips" id="filters" role="group" aria-label="סינון לפי תחנה">
         <button class="chip active" data-filter="all" aria-pressed="true">כל התחנות</button>
-        <button class="chip" data-filter="raananaSouth" aria-pressed="false">🚆 רעננה דרום</button>
-        <button class="chip" data-filter="raananaWest" aria-pressed="false">🚆 רעננה מערב</button>
-        <button class="chip" data-filter="herzliya" aria-pressed="false">🚆 הרצליה</button>
+        <button class="chip" data-filter="raananaSouth" aria-pressed="false"><span class="emoji" aria-hidden="true">🚆</span> רעננה דרום</button>
+        <button class="chip" data-filter="raananaWest" aria-pressed="false"><span class="emoji" aria-hidden="true">🚆</span> רעננה מערב</button>
+        <button class="chip" data-filter="herzliya" aria-pressed="false"><span class="emoji" aria-hidden="true">🚆</span> הרצליה</button>
       </div>
       <button id="newPost" class="btn primary">+ מחפשים מונית</button>
     </div>
 
-    <div id="list" class="list" aria-live="polite"></div>
+    <div id="list" class="list" aria-live="polite">
+      <div class="skeleton-card" aria-hidden="true"></div>
+      <div class="skeleton-card" aria-hidden="true"></div>
+    </div>
   </main>
 
   <footer class="wrap footer">
@@ -80,13 +89,17 @@
 
   <div class="sticky-cta" id="stickyCta">
     <button class="btn primary" id="newPostSticky">+ מחפשים מונית</button>
+    <button class="btn install-btn" id="installBtn" type="button" aria-label="התקנת האפליקציה" title="התקנת האפליקציה" hidden>📲</button>
   </div>
+
+  <div id="toastHost" class="toast-host"></div>
 
   <dialog id="postDialog" class="dialog">
     <form id="postForm" method="dialog" novalidate>
       <div class="dialog-title">
         <span class="mission-tag">NEW MISSION</span>
         <h2>מחפשים מונית? 🚕</h2>
+        <button type="button" class="dialog-close" data-close aria-label="סגירת החלון" title="סגירה">✕</button>
       </div>
 
       <div class="field">
@@ -141,7 +154,7 @@
         <input id="note" maxlength="300" placeholder="אופציונלי">
       </div>
 
-      <p id="formError" class="error" hidden></p>
+      <p id="formError" class="error" role="alert" hidden></p>
 
       <div class="actions">
         <button type="button" class="btn ghost" data-close>ביטול</button>
@@ -155,6 +168,7 @@
       <div class="dialog-title">
         <span class="mission-tag">HOME BASE</span>
         <h2>איפה הבית? 🏠</h2>
+        <button type="button" class="dialog-close" data-close aria-label="סגירת החלון" title="סגירה">✕</button>
       </div>
       <div class="field">
         <input id="homeSearch" type="search" placeholder="חיפוש תחנה…" aria-label="חיפוש תחנת בית" dir="rtl">
@@ -180,6 +194,7 @@
       <p class="note" hidden></p>
       <div class="comments"></div>
       <div class="quick"></div>
+      <div class="share-row"></div>
       <form class="comment-form">
         <input class="comment-input" dir="rtl" maxlength="300" placeholder="כתבו לי כאן… (אנונימי)" required>
         <button type="submit" class="btn primary sm">שלח</button>
