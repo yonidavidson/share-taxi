@@ -632,6 +632,7 @@ function legInfo(travel, nameById) {
       arrivePlatform: prev.destPlatform > 0 ? prev.destPlatform : null,
       departPlatform: next.originPlatform > 0 ? next.originPlatform : null,
       departTime: String(next.departureTime).slice(11, 16),
+      departDate: String(next.departureTime).slice(0, 10),
       waitMin: Number.isFinite(arrMs) && Number.isFinite(depMs)
         ? Math.max(0, Math.round((depMs - arrMs) / 60000))
         : null,
