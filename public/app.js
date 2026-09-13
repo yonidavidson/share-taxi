@@ -148,6 +148,22 @@ const formError = $('#formError');
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// הודעת מערכת מעוצבת (במקום alert) — role=status, נעלמת אחרי 5 שניות
+function toast(message) {
+  const host = $('#toastHost');
+  if (!host) return;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.setAttribute('role', 'status');
+  t.setAttribute('aria-live', 'polite');
+  t.textContent = message;
+  host.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('out');
+    setTimeout(() => t.remove(), 260);
+  }, 5000);
+}
+
 function parseYMD(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -216,17 +232,20 @@ function render() {
   });
 
   if (state.loading) {
-    list.innerHTML = '<div class="empty"><span class="big">⏳</span>טוען...</div>';
+    // שלדות טעינה באותו גובה כמו כרטיס — אין אזור ריק גם ב-reload קר
+    list.setAttribute('aria-busy', 'true');
+    list.innerHTML = '<div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div>';
     return;
   }
+  list.removeAttribute('aria-busy');
 
   if (!filtered.length) {
     list.innerHTML = `
       <div class="empty">
-        <span class="big">🚕</span>
-        <span class="mission">${state.filter !== 'all' ? 'אין משימות בסינון הזה' : 'MISSION START?'}</span><br>
-        אין כרגע חיפושי מונית ${state.dir === 'from' ? 'לכיוון הביתה' : 'לגב-ים'}.<br>
-        היו הראשונים — לחצו על <b>«מחפשים מונית»</b>!
+        <span class="big" aria-hidden="true">🚕</span>
+        <span class="mission">${state.filter !== 'all' ? 'אין משימות בסינון הזה' : 'MISSION START?'}</span>
+        <p class="state-text">אין כרגע חיפושי מונית ${state.dir === 'from' ? 'לכיוון הביתה' : 'לגב-ים'}.<br>
+        היו הראשונים — לחצו על <b>«מחפשים מונית»</b>!</p>
       </div>`;
     return;
   }
@@ -255,6 +274,12 @@ function render() {
 
 // מונה חי מעל הלוח — מתעדכן באנימציה כשמספר המחפשים משתנה
 function updateBoardCount() {
+  // סקופ הכיוון שלי גלוי תמיד ליד הסינון (הלוח מסונן לפיו)
+  const scope = $('#boardScope');
+  if (scope) {
+    const scopeText = `הכיוון שלי: ${state.dir === 'from' ? 'הביתה' : 'לעבודה'}`;
+    if (scope.textContent !== scopeText) scope.textContent = scopeText; // לא להקריא שוב ושוב לקורא מסך
+  }
   const el = $('#boardCount');
   if (!el) return;
   const total = state.posts.length;
@@ -306,7 +331,7 @@ function renderCard(post, index = 0) {
   const taxi = car
     ? ` <span class="taxi-hint" data-key="${esc(stationKey)}" title="${fare ? `הערכת מונית שלמה ≈${fare.total} ₪ · משותפת ל-3 ≈${fare.per3} ₪ לאדם` : 'זמן נסיעה משוער ברכב/מונית'}">· 🚕 ≈${car.min} דק׳${fare ? ` · ≈${fare.total} ₪` : ''}</span>`
     : '';
-  when.innerHTML = `⏰ <b>${esc(post.time)}</b>${flex}${taxi}`;
+  when.innerHTML = `<b><bdi>${esc(post.time)}</bdi></b>${flex}${taxi}`;
 
   const noteEl = el.querySelector('.note');
   if (post.note) {
@@ -324,29 +349,38 @@ function renderCard(post, index = 0) {
     commentsEl.appendChild(div);
   }
 
-  // תשובות מהירות
+  // תשובות מהירות — אמוג׳י ראשון בתווית (עקביות עם הצ׳יפים)
   const quick = el.querySelector('.quick');
-  for (const text of ['בדרך! 🚕', 'אני שם בעוד 5 דקות ⏱', 'גם אני מצטרף/ת 👋', 'מקום פנוי? 🙋']) {
+  for (const [emoji, text] of [
+    ['🚕', 'בדרך!'],
+    ['⏱', 'אני שם בעוד 5 דקות'],
+    ['👋', 'גם אני מצטרף/ת'],
+    ['🙋', 'מקום פנוי?'],
+  ]) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = text;
-    btn.addEventListener('click', () => sendComment(post.id, text));
+    btn.append(emojiSpan(emoji), ` ${text}`);
+    btn.addEventListener('click', () => sendComment(post.id, `${emoji} ${text}`));
     quick.appendChild(btn);
   }
 
-  // שיתוף ההזמנה (וואטסאפ / שיתוף מקורי)
+  // שיתוף ההזמנה — פעולה נפרדת עם קו מפריד לפניה (לא עוד תגובה מהירה)
   const shareBtn = document.createElement('button');
   shareBtn.type = 'button';
-  shareBtn.textContent = '📤 שתפו';
+  shareBtn.className = 'share-btn';
+  shareBtn.append(emojiSpan('📤'), ' שתפו');
   shareBtn.title = 'שיתוף ההזמנה עם נוסעים';
   shareBtn.addEventListener('click', () => sharePost(post));
-  quick.appendChild(shareBtn);
+  el.querySelector('.share-row').appendChild(shareBtn);
 
   // טופס תגובה חופשית — כפתור השליחה מושבת כשאין טקסט
   const commentForm = el.querySelector('.comment-form');
   const commentInput = commentForm.querySelector('.comment-input');
   const commentSend = commentForm.querySelector('button[type="submit"]');
-  const syncSend = () => { commentSend.disabled = !commentInput.value.trim(); };
+  const syncSend = () => {
+    commentSend.disabled = !commentInput.value.trim();
+    commentSend.title = commentSend.disabled ? 'כתבו הודעה כדי לשלוח' : '';
+  };
   commentInput.addEventListener('input', syncSend);
   syncSend();
   commentForm.addEventListener('submit', async (e) => {
@@ -366,7 +400,7 @@ function renderCard(post, index = 0) {
       try {
         await deletePost(post.id);
         await refresh();
-      } catch (err) { alert(err.message); }
+      } catch (err) { toast(err.message); }
     });
   }
 
@@ -414,7 +448,7 @@ async function sendComment(postId, text) {
   try {
     await addComment(postId, text);
     await refresh();
-  } catch (err) { alert(err.message); }
+  } catch (err) { toast(err.message); }
 }
 
 // ------------------------------------------------------------------
@@ -433,12 +467,28 @@ function shortDay(dateStr) {
   return new Intl.DateTimeFormat('he-IL', { weekday: 'short' }).format(parseYMD(dateStr));
 }
 
-function trainTime(t, showPlatform = false) {
+function emojiSpan(char) {
+  const s = document.createElement('span');
+  s.className = 'emoji';
+  s.setAttribute('aria-hidden', 'true');
+  s.textContent = char;
+  return s;
+}
+
+function trainTime(t, primary = false, rowDate = null) {
   const wrap = document.createElement('span');
   wrap.className = 'ir-time-wrap';
 
+  // תגית יום לכל זמן שאינו היום (ולא חוזרת על תגית היום של השורה)
+  if (t.date && t.date !== todayYMD() && t.date !== rowDate) {
+    const day = document.createElement('i');
+    day.className = 'ir-day-tag';
+    day.textContent = shortDay(t.date);
+    wrap.appendChild(day);
+  }
+
   const el = document.createElement('bdi');
-  el.className = 'ir-time';
+  el.className = 'ir-time' + (primary ? ' primary' : '');
   el.textContent = t.time;
   if (t.cancelled) el.classList.add('cancel');
   else if (Number.isFinite(t.delay) && t.delay > DELAY_ON_TIME_MAX) el.classList.add('late');
@@ -455,13 +505,13 @@ function trainTime(t, showPlatform = false) {
     tag.textContent = `+${t.delay}׳`;
     wrap.appendChild(tag);
   }
-  if (showPlatform && t.platform) {
+  if (t.platform) {
     const p = document.createElement('i');
     p.className = 'ir-plat';
     p.textContent = `רצ׳ ${t.platform}`;
     wrap.appendChild(p);
   }
-  if (showPlatform && !t.cancelled) {
+  if (primary && !t.cancelled) {
     const mins = minsUntil(t.date, t.time);
     if (mins != null && mins <= 180) {
       const cd = document.createElement('i');
@@ -482,13 +532,13 @@ function infoStationRow(station, meta) {
 
   const name = document.createElement('span');
   name.className = 'ir-name';
-  name.textContent = `🚆 ${meta.short}`;
+  name.append(emojiSpan('🚆'), ` ${meta.short}`);
   top.appendChild(name);
 
   if (station.car) {
     const taxi = document.createElement('span');
     taxi.className = 'ir-taxi';
-    taxi.textContent = `🚕 ${station.car.min}׳`;
+    taxi.append(emojiSpan('🚕'), ` ${station.car.min}׳`);
     taxi.title = `≈${station.car.min} דק׳ נסיעה · ${station.car.km} ק״מ` + (station.car.live ? ' · זמן אמת' : ' · הערכה');
     top.appendChild(taxi);
   }
@@ -504,13 +554,13 @@ function infoStationRow(station, meta) {
 
   const times = document.createElement('span');
   times.className = 'ir-times';
-  for (const [arrow, label, items] of [['⬇️', 'מגיעות', station.arrivals], ['⬆️', 'יוצאות', station.departures]]) {
+  for (const [label, items] of [['מגיעות', station.arrivals], ['יוצאות', station.departures]]) {
     const group = document.createElement('span');
     group.className = 'ir-group';
     group.title = `${label} ${label === 'מגיעות' ? 'לתחנה' : 'מהתחנה'}`;
     const dir = document.createElement('span');
     dir.className = 'ir-dir';
-    dir.textContent = `${arrow} ${label}`;
+    dir.textContent = label;
     group.appendChild(dir);
     if (!items.length) {
       const none = document.createElement('span');
@@ -525,7 +575,7 @@ function infoStationRow(station, meta) {
           sep.textContent = '·';
           group.appendChild(sep);
         }
-        group.appendChild(trainTime(t, i === 0));
+        group.appendChild(trainTime(t, i === 0, first?.date ?? null));
       });
     }
     times.appendChild(group);
@@ -542,8 +592,10 @@ function renderInfo(payload) {
     const late = s.total - s.onTime;
     statsEl.textContent = `⏱️ ${s.onTime}/${s.total} רכבות בזמן` +
       (late > 0 && s.avgDelay > 0 ? ` · איחור ממוצע ${s.avgDelay} דק׳` : '');
+    statsEl.classList.toggle('warn', s.onTime / s.total < 0.7);
   } else {
     statsEl.textContent = '';
+    statsEl.classList.remove('warn');
   }
 
   state.cars = Object.fromEntries(
@@ -562,9 +614,18 @@ function renderInfo(payload) {
   panel.classList.remove('loading');
   if (!panel.dataset.toggled) setPanelCollapsed(!!home);
   const ageMin = Math.round((Date.now() - payload.cachedAt) / 60000);
+  const stale = payload.stale || ageMin >= 5;
+  // רצועת אזהרה בראש הכרטיס כשהנתונים מיושנים (במקום רק צבע בתחתית)
+  const staleEl = $('#infoStale');
+  if (stale) {
+    staleEl.hidden = false;
+    const staleText = `⚠️ הנתונים בני ${Math.max(1, ageMin)} דק׳ — מרעננים…`;
+    if (staleEl.textContent !== staleText) staleEl.textContent = staleText;
+  } else {
+    staleEl.hidden = true;
+  }
   const foot = $('#infoUpdated');
-  foot.textContent = `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${payload.stale || ageMin >= 5 ? ' · ייתכן שאינו מעודכן' : ''}`;
-  foot.classList.toggle('stale', payload.stale || ageMin >= 5);
+  foot.textContent = `עודכן ${relTime(new Date(payload.cachedAt).toISOString())}${stale ? ' · ייתכן שאינו מעודכן' : ''}`;
 
   state.info = info;
   renderHero();
@@ -586,9 +647,11 @@ async function refreshInfo() {
     const res = await fetch('/api/info');
     if (!res.ok) throw new Error(`info ${res.status}`);
     renderInfo(await res.json());
+    return true;
   } catch {
     panel.classList.remove('loading');
     if (!panel.dataset.loaded) panel.hidden = true;
+    return false;
   }
 }
 
@@ -622,7 +685,6 @@ const big = (html) => heroEl('hero-big', html);
 const doLine = (html) => heroEl('hero-do', html);
 const detail = (text) => { const d = heroEl('hero-detail'); d.textContent = text; return d; };
 const altLine = (text) => { const d = heroEl('hero-alts'); d.textContent = text; return d; };
-const optSub = (text) => { const d = heroEl('hero-opt-sub'); d.textContent = text; return d; };
 
 function transferText(t) {
   const name = (t.stationName ?? '').split(' - ')[0];
@@ -630,9 +692,11 @@ function transferText(t) {
   if (t.arrivePlatform) parts.push(`יורדים ברציף ${t.arrivePlatform}`);
   if (t.departPlatform) parts.push(`עולים ברציף ${t.departPlatform}`);
   if (Number.isFinite(t.waitMin)) parts.push(`המתנה ${t.waitMin} דק׳`);
+  // שעת ההחלפה עשויה להיות מחר — תווית יום מפורשת (מטמון ישן בלי departDate לא נשבר)
+  const depDay = t.departDate && t.departDate !== todayYMD() ? `${shortDay(t.departDate)} ` : '';
   return `החלפה ב${name || 'תחנת מעבר'}` +
     (parts.length ? ` · ${parts.join(' · ')}` : '') +
-    (t.departTime ? ` · הרכבת ב-${t.departTime}` : '') +
+    (t.departTime ? ` · הרכבת ב-${depDay}${t.departTime}` : '') +
     (t.towards ? ` · לכיוון ${t.towards}` : '');
 }
 
@@ -682,15 +746,78 @@ function updateCountdowns() {
   }
 }
 
-function optBlock(prefix, mainText, transfers) {
-  const wrapEl = document.createElement('div');
-  wrapEl.className = 'hero-opt';
-  const main = document.createElement('div');
-  main.className = 'hero-opt-main';
-  main.textContent = prefix + mainText;
-  wrapEl.appendChild(main);
-  for (const t of transfers ?? []) wrapEl.appendChild(optSub(transferText(t)));
+// תגית יום ("מחר" / יום בשבוע) לזמן שאינו היום — לא משנים את המחרוזת כשהיום זהה
+function dayLabelHtml(dateStr) {
+  return dateStr && dateStr !== todayYMD()
+    ? `<span class="hero-day">${shortDay(dateStr)}</span> `
+    : '';
+}
+
+function heroChip(text) {
+  const s = document.createElement('span');
+  s.className = 'hero-chip';
+  s.textContent = text;
+  return s;
+}
+
+// החלפות כצ׳יפים נפרדים (במקום משפט רץ עם מפרידים) — כל שעת המשך מקבלת תגית יום
+function transferChips(o) {
+  const transfers = transfersOf(o);
+  if (!transfers.length) return null;
+  const wrapEl = heroEl('hero-chips');
+  for (const t of transfers) {
+    const name = (t.stationName ?? '').split(' - ')[0];
+    if (name) wrapEl.appendChild(heroChip(`החלפה ב${name}`));
+    if (t.arrivePlatform && t.departPlatform) {
+      wrapEl.appendChild(heroChip(`רציף ${t.arrivePlatform}→${t.departPlatform}`));
+    } else if (t.departPlatform) {
+      wrapEl.appendChild(heroChip(`רציף ${t.departPlatform}`));
+    }
+    if (Number.isFinite(t.waitMin)) wrapEl.appendChild(heroChip(`המתנה ${t.waitMin} דק׳`));
+    if (t.departTime) {
+      const depDay = t.departDate && t.departDate !== todayYMD() ? `${shortDay(t.departDate)} ` : '';
+      wrapEl.appendChild(heroChip(`רכבת המשך ${depDay}${t.departTime}`));
+    }
+  }
+  wrapEl.title = transfers.map((t) => transferText(t)).join(' | ');
   return wrapEl;
+}
+
+// בלוק אפשרות חלופית (תחנה אחרת) — כל זמן שאינו היום מסומן בתגית יום
+function optBlockFor(r, dir) {
+  const o = r.o;
+  const wrapEl = heroEl('hero-opt');
+  const main = heroEl('hero-opt-main');
+  main.textContent = `או דרך ${stationShort(r.key)}`;
+  wrapEl.appendChild(main);
+  const sub = heroEl('hero-opt-sub');
+  const carDay = r.car?.min ? ` · 🚕 ≈${r.car.min} דק׳` : '';
+  if (dir === 'to') {
+    sub.textContent = `רכבת ${(o.depDate && o.depDate !== todayYMD()) ? `${shortDay(o.depDate)} ` : ''}${o.depHome}` +
+      ` ← בגב-ים ${(o.arriveGavDate && o.arriveGavDate !== todayYMD()) ? `${shortDay(o.arriveGavDate)} ` : ''}${o.arriveGav}` +
+      carDay;
+  } else {
+    sub.textContent = `רכבת ${(o.departDate && o.departDate !== todayYMD()) ? `${shortDay(o.departDate)} ` : ''}${o.trainDeparture}` +
+      ` ← בבית ${(o.arriveDate && o.arriveDate !== todayYMD()) ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}` +
+      ` (צאו עד ${o.leaveBy})`;
+  }
+  wrapEl.appendChild(sub);
+  const chips = transferChips(o);
+  if (chips) wrapEl.appendChild(chips);
+  return wrapEl;
+}
+
+// חלופות מקופלות כברירת מחדל — disclosure עם aria-expanded מובנה
+function moreBlock(children, count) {
+  if (!children.length) return null;
+  const det = document.createElement('details');
+  det.className = 'hero-more';
+  const sum = document.createElement('summary');
+  sum.textContent = count > 0 ? `עוד ${count} אפשרויות` : 'עוד אפשרויות';
+  const body = heroEl('hero-more-body');
+  for (const c of children) body.appendChild(c);
+  det.append(sum, body);
+  return det;
 }
 
 // כל התחנות עם אפשרות — מסודרות לפי זמן ההגעה ליעד (גב-ים / הבית)
@@ -705,12 +832,13 @@ function heroStationRows(plan) {
   return rows;
 }
 
-// חתימת תוכן לאפשרות — לאנימציה רק כשמשהו משתנה
+// חתימת תוכן לאפשרות — לאנימציה רק כשמשהו משתנה (כולל תאריכי יום לכל זמן)
 function oSig(o) {
   return [
-    o.depHome ?? o.trainDeparture ?? '', o.arriveStation ?? o.arriveHome ?? '',
-    o.arriveGav ?? '', o.leaveBy ?? '', o.boardPlatform ?? '',
-    transfersOf(o).map((t) => `${t.stationId}:${t.arrivePlatform}:${t.departPlatform}:${t.departTime}:${t.waitMin}`).join('+'),
+    o.depHome ?? o.trainDeparture ?? '', o.depDate ?? o.departDate ?? '',
+    o.arriveStation ?? o.arriveHome ?? '', o.arriveDate ?? o.arriveStationDate ?? '',
+    o.arriveGav ?? '', o.arriveGavDate ?? '', o.leaveBy ?? '', o.leaveByDate ?? '', o.boardPlatform ?? '',
+    transfersOf(o).map((t) => `${t.stationId}:${t.arrivePlatform}:${t.departPlatform}:${t.departDate}:${t.departTime}:${t.waitMin}`).join('+'),
   ].join('|');
 }
 
@@ -737,36 +865,41 @@ function renderHero() {
       const best = state.workPlan.best;
       const rows = heroStationRows(state.workPlan);
       const carMin = state.workPlan.stations.find((s) => s.key === best.stationKey)?.car?.min;
-      const day = best.depDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.depDate)}</span> ` : '';
-      const gavDay = best.arriveGavDate !== todayYMD() ? `${shortDay(best.arriveGavDate)} ` : '';
-      const later = state.workPlan.next.slice(1, 3)
-        .map((o) => `${o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : ''}${o.depHome}`)
+      const laterText = state.workPlan.next.slice(1, 3)
+        .map((o) => `${o.depDate && o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : ''}${o.depHome}`)
         .join(' · ');
       const homeShort = home.name.split(' - ')[0];
-      sig = `to/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
+      sig = `to/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${laterText}`;
       hasData = true;
       render = () => {
-        const bigEl = big(`🚆 רכבת ${day}ב-<span class="hero-time"><bdi>${best.depHome}</bdi></span> מ${esc(home.name)}`);
+        el.appendChild(heroEl('hero-eyebrow', 'הכיוון שלי · לעבודה'));
+        el.appendChild(big(`🏢 בגב-ים ≈<span class="hero-time"><bdi>${best.arriveGav}</bdi></span> ${dayLabelHtml(best.arriveGavDate)}`));
+        const doEl = doLine(`🚆 הרכבת ב-<b><bdi>${best.depHome}</bdi></b> מהבית ${dayLabelHtml(best.depDate)}`);
         const cd = countdownEl(best.depDate, best.depHome);
-        if (cd) bigEl.appendChild(cd);
-        el.appendChild(bigEl);
-        el.appendChild(doLine(`🏢 בגב-ים ≈<b><bdi>${gavDay}${best.arriveGav}</bdi></b>`));
-        el.appendChild(detail((best.boardPlatform ? `רציף ${best.boardPlatform} ב${homeShort} · ` : '') +
-          (best.train && best.towards ? `רכבת ${best.train} לכיוון ${best.towards} · ` : '') +
-          (transfersOf(best).length ? '' : `דרך ${stationShort(best.stationKey)} · `) +
-          `מגיע ${best.arriveStation}` +
-          (carMin ? ` · 🚕 ~${carMin} דק׳` : '')));
-        for (const t of transfersOf(best)) el.appendChild(optSub(transferText(t)));
+        if (cd) doEl.appendChild(cd);
+        el.appendChild(doEl);
+        const trainParts = [];
+        if (best.boardPlatform) trainParts.push(`רציף ${best.boardPlatform}`);
+        if (best.towards) trainParts.push(`לכיוון ${esc(best.towards)}`);
+        if (!transfersOf(best).length) trainParts.push('ישיר');
+        el.appendChild(heroEl('hero-train', `🚆 ${trainParts.join(' · ') || 'רכבת'}`));
+        const metaParts = [`מ${homeShort}`, `מגיע ${best.arriveStation}`];
+        if (carMin) metaParts.push(`🚕 ≈${carMin} דק׳`);
+        el.appendChild(detail(metaParts.join(' · ')));
+        const chips = transferChips(best);
+        if (chips) el.appendChild(chips);
+
+        // חלופות מקופלות כברירת מחדל: תחנות אחרות + שעות נוספות
+        const moreChildren = [];
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
-          el.appendChild(optBlock(`או דרך ${stationShort(r.key)}: `,
-            (r.o.depHome !== best.depHome ? `רכבת ${r.o.depHome} · ` : '') +
-            `מגיע ${r.o.arriveStation}` +
-            (r.car?.min ? ` · 🚕 ~${r.car.min} דק׳` : '') +
-            ` · בגב-ים ${r.o.arriveGav}`,
-            transfersOf(r.o)));
+          moreChildren.push(optBlockFor(r, 'to'));
         }
-        if (later) el.appendChild(altLine((best.depDate !== todayYMD() ? 'נגמרו הרכבות להיום · ' : '') + 'עוד מהבית: ' + later));
+        if (laterText) {
+          moreChildren.push(altLine((best.depDate !== todayYMD() ? 'נגמרו הרכבות להיום · ' : '') + 'עוד מהבית: ' + laterText));
+        }
+        const more = moreBlock(moreChildren, moreChildren.length);
+        if (more) el.appendChild(more);
 
         // כפתור "אני על הרכבת" — פרסום מהיר שהרכבת שלי מגיעה (רק עבור רכבת של היום)
         if (best.depDate === todayYMD()) {
@@ -782,7 +915,7 @@ function renderHero() {
             rideBtn.textContent = `🚆 אני על הרכבת${best.train ? ` ${best.train}` : ''} — פרסמו שאני מגיע`;
             rideBtn.addEventListener('click', async () => {
               if (already()) {
-                alert('כבר יש לך פרסום פעיל להיום 🙂');
+                toast('כבר יש לך פרסום פעיל להיום 🙂');
                 rideBtn.textContent = '✅ כבר פרסמת נסיעה להיום';
                 rideBtn.disabled = true;
                 return;
@@ -804,12 +937,12 @@ function renderHero() {
                 missionPassed();
                 await refresh();
               } catch (err) {
-                alert(err.message);
+                toast(err.message);
                 rideBtn.disabled = false;
               }
             });
-            el.appendChild(rideBtn);
           }
+          el.appendChild(rideBtn);
         }
       };
     }
@@ -829,31 +962,38 @@ function renderHero() {
       const best = state.homePlan.best;
       const rows = heroStationRows(state.homePlan);
       const homeShort = home.name.split(' - ')[0];
-      const day = best.arriveDate !== todayYMD() ? `<span class="hero-day">${shortDay(best.arriveDate)}</span> ` : '';
-      const later = state.homePlan.next.slice(1, 3)
-        .map((o) => `${o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}`)
+      const laterText = state.homePlan.next.slice(1, 3)
+        .map((o) => `${o.arriveDate && o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}`)
         .join(' · ');
-      sig = `from/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${later}`;
+      sig = `from/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${laterText}`;
       hasData = true;
       render = () => {
-        el.appendChild(big(`🏠 בבית ${day}ב-<span class="hero-time"><bdi>${best.arriveHome}</bdi></span>`));
-        const doEl = doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b>`);
+        el.appendChild(heroEl('hero-eyebrow', 'הכיוון שלי · הביתה'));
+        el.appendChild(big(`🏠 בבית <span class="hero-time"><bdi>${best.arriveHome}</bdi></span> ${dayLabelHtml(best.arriveDate)}`));
+        const doEl = doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b> ${dayLabelHtml(best.leaveByDate)}`);
         const cd = countdownEl(best.leaveByDate, best.leaveBy);
         if (cd) doEl.appendChild(cd);
         el.appendChild(doEl);
-        el.appendChild(detail(`🚆 ${best.trainDeparture}` +
-          (best.boardPlatform ? ` · רציף ${best.boardPlatform}` : '') +
-          (best.towards ? ` · לכיוון ${best.towards}` : '') +
-          ` · ${stationShort(best.stationKey)} ← ${homeShort}` +
-          (transfersOf(best).length ? '' : ' · ישיר')));
-        for (const t of transfersOf(best)) el.appendChild(optSub(transferText(t)));
+        const trainParts = [`${dayLabelHtml(best.departDate)}${best.trainDeparture}`];
+        if (best.boardPlatform) trainParts.push(`רציף ${best.boardPlatform}`);
+        if (best.towards) trainParts.push(`לכיוון ${esc(best.towards)}`);
+        if (!transfersOf(best).length) trainParts.push('ישיר');
+        el.appendChild(heroEl('hero-train', `🚆 ${trainParts.join(' · ')}`));
+        el.appendChild(detail(`מ${stationShort(best.stationKey)} אל ${homeShort}`));
+        const chips = transferChips(best);
+        if (chips) el.appendChild(chips);
+
+        // חלופות מקופלות כברירת מחדל: תחנות אחרות + שעות נוספות
+        const moreChildren = [];
         for (const r of rows) {
           if (r.key === best.stationKey) continue;
-          el.appendChild(optBlock(`או דרך ${stationShort(r.key)}: `,
-            `רכבת ${r.o.trainDeparture} · בבית ${r.o.arriveHome} (צאו עד ${r.o.leaveBy})`,
-            transfersOf(r.o)));
+          moreChildren.push(optBlockFor(r, 'from'));
         }
-        if (later) el.appendChild(altLine((best.arriveDate !== todayYMD() ? 'נגמרו הרכבות להיום · ' : '') + 'עוד: ' + later));
+        if (laterText) {
+          moreChildren.push(altLine((best.arriveDate !== todayYMD() ? 'נגמרו הרכבות להיום · ' : '') + 'עוד: ' + laterText));
+        }
+        const more = moreBlock(moreChildren, moreChildren.length);
+        if (more) el.appendChild(more);
       };
     }
   }
@@ -1017,9 +1157,22 @@ async function refresh() {
     state.posts = posts;
     state.loading = false;
     render();
+    return true;
   } catch (err) {
     state.loading = false;
-    list.innerHTML = `<div class="empty"><span class="big">😵</span>${esc(err.message)}<br>נסו לרענן.</div>`;
+    list.removeAttribute('aria-busy');
+    const block = document.createElement('div');
+    block.className = 'empty';
+    block.innerHTML = `<span class="big" aria-hidden="true">😵</span>
+      <p class="state-text">${esc(err.message)}<br>נסו לרענן.</p>`;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn ghost state-retry';
+    retry.textContent = 'נסו שוב';
+    retry.addEventListener('click', () => refresh());
+    block.appendChild(retry);
+    list.replaceChildren(block);
+    return false;
   }
 }
 
@@ -1156,8 +1309,8 @@ function openPostDialog() {
 $('#newPost').addEventListener('click', openPostDialog);
 $('#newPostSticky').addEventListener('click', openPostDialog);
 
-for (const btn of dialog.querySelectorAll('[data-close]')) {
-  btn.addEventListener('click', () => dialog.close());
+for (const btn of document.querySelectorAll('dialog [data-close]')) {
+  btn.addEventListener('click', () => btn.closest('dialog')?.close());
 }
 
 $('#filters').addEventListener('click', (e) => {
@@ -1177,7 +1330,19 @@ for (const seg of document.querySelectorAll('#myDirSeg .seg')) {
   seg.addEventListener('click', () => setDirection(seg.dataset.direction === 'toG' ? 'to' : 'from'));
 }
 
-$('#infoRefresh').addEventListener('click', () => { refresh(); refreshInfo(); });
+$('#infoRefresh').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (btn.classList.contains('busy')) return;
+  btn.classList.add('busy');
+  btn.setAttribute('aria-busy', 'true');
+  try {
+    const [, infoOk] = await Promise.all([refresh(), refreshInfo()]);
+    if (!infoOk) toast('רענון הלוח נכשל — ננסה שוב אוטומטית');
+  } finally {
+    btn.classList.remove('busy');
+    btn.removeAttribute('aria-busy');
+  }
+});
 
 // רענון אוטומטי כל 30 שניות וכשחוזרים ללשונית
 setInterval(() => {
@@ -1214,10 +1379,7 @@ if ('serviceWorker' in navigator && isSecureCtx) {
 }
 
 let deferredInstall = null;
-const installBtn = document.createElement('button');
-installBtn.className = 'install-pill';
-installBtn.innerHTML = '📲 <span>התקינו את האפליקציה</span>';
-installBtn.hidden = true;
+const installBtn = $('#installBtn'); // יושב בשכבת ה-CTA האחת (אוחד עם הכפתור הדביק)
 installBtn.addEventListener('click', async () => {
   if (!deferredInstall) return;
   deferredInstall.prompt();
@@ -1225,7 +1387,6 @@ installBtn.addEventListener('click', async () => {
   deferredInstall = null;
   installBtn.hidden = true;
 });
-document.body.appendChild(installBtn);
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -1277,6 +1438,10 @@ function updatePushBtn() {
   pushBtn.hidden = false;
   pushBtn.textContent = pushSub ? '🔔' : '🔕';
   pushBtn.classList.toggle('on', !!pushSub);
+  pushBtn.setAttribute('aria-pressed', String(!!pushSub));
+  pushBtn.setAttribute('aria-label', pushSub
+    ? `ביטול התראות (${state.dir === 'from' ? 'הביתה' : 'לעבודה'})`
+    : 'הפעלת התראות על נסיעות מתאימות');
   pushBtn.title = pushSub
     ? `התראות פעילות ${state.dir === 'from' ? 'לכיוון הביתה' : 'לכיוון העבודה'} — לחיצה לביטול`
     : 'הפעלת התראות על נסיעות מתאימות';
@@ -1304,7 +1469,7 @@ pushBtn.addEventListener('click', async () => {
       return;
     }
     if (Notification.permission === 'denied') {
-      alert('ההתראות חסומות בדפדפן — אפשר לאשר אותן בהגדרות האתר.');
+      toast('ההתראות חסומות בדפדפן — אפשר לאשר אותן בהגדרות האתר.');
       return;
     }
     const perm = await Notification.requestPermission();
@@ -1320,9 +1485,9 @@ pushBtn.addEventListener('click', async () => {
       body: { subscription: pushSub.toJSON(), direction: state.dir },
     });
     updatePushBtn();
-    alert('🔔 התראות הופעלו — נעדכן אותך על נסיעות מתאימות ועל תגובות.');
+    toast('🔔 התראות הופעלו — נעדכן אותך על נסיעות מתאימות ועל תגובות.');
   } catch (err) {
-    alert('לא הצלחנו להפעיל התראות: ' + (err?.message || 'שגיאה'));
+    toast('לא הצלחנו להפעיל התראות: ' + (err?.message || 'שגיאה'));
   }
 });
 
