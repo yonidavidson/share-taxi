@@ -251,6 +251,27 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .hero-train { font-size: 15px; font-weight: 700; }
+.hero-why {
+  justify-self: start;
+  display: inline-block;
+  background: var(--c-yellow); color: var(--t-on-yellow);
+  border: 2px solid #000; border-radius: var(--r-pill);
+  box-shadow: var(--sh-1);
+  padding: 1px 10px;
+  font-size: 12.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.hero-pref { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.hero-pref-label { font-size: 12px; font-weight: 700; color: var(--t-paper-2); }
+.pref-chip {
+  border: 2px solid #000; background: var(--c-ink); color: var(--t-2);
+  border-radius: var(--r-pill);
+  min-height: 32px; padding: 3px 12px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+}
+.pref-chip.on { background: var(--c-yellow); color: var(--t-on-yellow); }
+.pref-chip:focus-visible { outline: 3px solid var(--c-yellow-2); outline-offset: 1px; }
 .hero-detail { font-size: 13.5px; color: var(--t-paper-2); font-weight: 600; }
 .hero-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .hero-chip {
@@ -265,8 +286,7 @@ body {
   cursor: pointer;
   font-size: 13.5px; font-weight: 800; color: var(--t-paper-2);
   font-variant-numeric: tabular-nums;
-}
-.hero-more[open] summary { margin-bottom: var(--sp-2); }
+}.hero-more[open] summary { margin-bottom: var(--sp-2); }
 .hero-more-body { display: grid; gap: var(--sp-3); }
 .hero-opt { border-top: 2px dashed var(--c-paper-2); padding-top: var(--sp-2); display: grid; gap: 3px; }
 .hero-opt-main { font-size: 14px; font-weight: 800; }

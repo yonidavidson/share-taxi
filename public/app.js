@@ -792,12 +792,13 @@ function optBlockFor(r, dir) {
   wrapEl.appendChild(main);
   const sub = heroEl('hero-opt-sub');
   const carDay = r.car?.min ? ` · 🚕 ≈${r.car.min} דק׳` : '';
+  const fareTxt = Number.isFinite(r.fare) ? `≈₪${r.fare} · ` : '';
   if (dir === 'to') {
-    sub.textContent = `רכבת ${(o.depDate && o.depDate !== todayYMD()) ? `${shortDay(o.depDate)} ` : ''}${o.depHome}` +
+    sub.textContent = fareTxt + `רכבת ${(o.depDate && o.depDate !== todayYMD()) ? `${shortDay(o.depDate)} ` : ''}${o.depHome}` +
       ` ← בגב-ים ${(o.arriveGavDate && o.arriveGavDate !== todayYMD()) ? `${shortDay(o.arriveGavDate)} ` : ''}${o.arriveGav}` +
       carDay;
   } else {
-    sub.textContent = `רכבת ${(o.departDate && o.departDate !== todayYMD()) ? `${shortDay(o.departDate)} ` : ''}${o.trainDeparture}` +
+    sub.textContent = fareTxt + `רכבת ${(o.departDate && o.departDate !== todayYMD()) ? `${shortDay(o.departDate)} ` : ''}${o.trainDeparture}` +
       ` ← בבית ${(o.arriveDate && o.arriveDate !== todayYMD()) ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}` +
       ` (צאו עד ${o.leaveBy})`;
   }
@@ -820,18 +821,6 @@ function moreBlock(children, count) {
   return det;
 }
 
-// כל התחנות עם אפשרות — מסודרות לפי זמן ההגעה ליעד (גב-ים / הבית)
-function heroStationRows(plan) {
-  const rows = (plan?.stations ?? [])
-    .filter((s) => s.options?.length)
-    .map((s) => ({ key: s.key, car: s.car, o: s.options[0] }));
-  const arriveKey = (o) => o.arriveHome
-    ? `${o.arriveDate}T${o.arriveHome}`
-    : `${o.arriveGavDate}T${o.arriveGav}`;
-  rows.sort((a, b) => arriveKey(a.o).localeCompare(arriveKey(b.o)));
-  return rows;
-}
-
 // חתימת תוכן לאפשרות — לאנימציה רק כשמשהו משתנה (כולל תאריכי יום לכל זמן)
 function oSig(o) {
   return [
@@ -840,6 +829,81 @@ function oSig(o) {
     o.arriveGav ?? '', o.arriveGavDate ?? '', o.leaveBy ?? '', o.leaveByDate ?? '', o.boardPlatform ?? '',
     transfersOf(o).map((t) => `${t.stationId}:${t.arrivePlatform}:${t.departPlatform}:${t.departDate}:${t.departTime}:${t.waitMin}`).join('+'),
   ].join('|');
+}
+
+// ------------------------------------------------------------------
+// העדפה: 💰 זול (ברירת מחדל) / ⚡ מהיר — נשמרת מקומית
+// ------------------------------------------------------------------
+const PREF_KEY = 'st_pref';
+let pref = localStorage.getItem(PREF_KEY) === 'fast' ? 'fast' : 'cheap';
+
+// דירוג האפשרויות לפי ההעדפה (PlanningCore) עם מחיר מונית לכל תחנה
+function rankPlan(plan) {
+  const cands = (plan?.stations ?? [])
+    .filter((s) => s.options?.length)
+    .map((s) => ({
+      key: s.key,
+      car: s.car,
+      o: s.options[0],
+      fare: fareEstimate(s.car)?.total ?? null,
+      changes: s.options[0].changes ?? 0,
+    }));
+  return PlanningCore.rankOptions(cands, pref);
+}
+
+// דירוג עם נפילה בטוחה לתוכנית קיימת (אם אין מספיק נתונים לדירוג)
+function rankOrBest(plan) {
+  const ranked = rankPlan(plan);
+  if (ranked) return ranked;
+  const best = plan?.best;
+  if (!best) return null;
+  const car = plan.stations?.find((s) => s.key === best.stationKey)?.car ?? null;
+  return {
+    chosen: { key: best.stationKey, car, o: best, fare: fareEstimate(car)?.total ?? null },
+    fastest: null, cheapest: null, others: [], pref, savings: null, delayMin: 0,
+  };
+}
+
+// תג הסבר להמלצה — כדי שברור למה זו נבחרה
+function whyEl(ranked) {
+  if (!ranked || !ranked.chosen) return null;
+  const s = document.createElement('span');
+  s.className = 'hero-why';
+  if (ranked.chosen.key === ranked.fastest.key) {
+    const cheaperLater = ranked.cheapest && ranked.cheapest.key !== ranked.chosen.key;
+    s.textContent = ranked.pref === 'cheap' && cheaperLater
+      ? `⚡ מהיר · הזול מאחר ב-${Math.max(1, Math.round((ranked.cheapest.arrival - ranked.chosen.arrival) / 60000))} דק׳`
+      : '⚡ הכי מהיר';
+  } else {
+    s.textContent = '💰 הזול מבין המהירים' + (ranked.savings >= 5 ? ` · חוסך ≈₪${ranked.savings}` : '');
+  }
+  return s;
+}
+
+// בורר העדפה קטן בתוך כרטיס הפנים
+function prefRow() {
+  const wrap = document.createElement('div');
+  wrap.className = 'hero-pref';
+  const lab = document.createElement('span');
+  lab.className = 'hero-pref-label';
+  lab.textContent = 'העדפה:';
+  wrap.appendChild(lab);
+  for (const [val, text] of [['cheap', '💰 זול'], ['fast', '⚡ מהיר']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pref-chip' + (pref === val ? ' on' : '');
+    b.textContent = text;
+    b.setAttribute('aria-pressed', String(pref === val));
+    b.addEventListener('click', () => {
+      if (pref === val) return;
+      pref = val;
+      try { localStorage.setItem(PREF_KEY, pref); } catch { /* לא קריטי */ }
+      state.heroSig = null;
+      renderHero();
+    });
+    wrap.appendChild(b);
+  }
+  return wrap;
 }
 
 function renderHero() {
@@ -862,18 +926,22 @@ function renderHero() {
       sig = 'to/none';
       render = () => { el.textContent = '🚆 אין רכבות מתחנת הבית כרגע — נבדוק שוב בעדכון הבא'; };
     } else {
-      const best = state.workPlan.best;
-      const rows = heroStationRows(state.workPlan);
-      const carMin = state.workPlan.stations.find((s) => s.key === best.stationKey)?.car?.min;
+      const ranked = rankOrBest(state.workPlan);
+      const best = ranked.chosen.o;
+      const rows = ranked.others;
+      const carMin = ranked.chosen.car?.min;
+      const fare = ranked.chosen.fare;
       const laterText = state.workPlan.next.slice(1, 3)
         .map((o) => `${o.depDate && o.depDate !== todayYMD() ? `${shortDay(o.depDate)} ` : ''}${o.depHome}`)
         .join(' · ');
       const homeShort = home.name.split(' - ')[0];
-      sig = `to/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${laterText}`;
+      sig = `to/${todayYMD()}/${pref}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o) + (r.fare ?? '')).join('-')}/${laterText}`;
       hasData = true;
       render = () => {
         el.appendChild(heroEl('hero-eyebrow', 'הכיוון שלי · לעבודה'));
         el.appendChild(big(`🏢 בגב-ים ≈<span class="hero-time"><bdi>${best.arriveGav}</bdi></span> ${dayLabelHtml(best.arriveGavDate)}`));
+        const why = whyEl(ranked);
+        if (why) el.appendChild(why);
         const doEl = doLine(`🚆 הרכבת ב-<b><bdi>${best.depHome}</bdi></b> מהבית ${dayLabelHtml(best.depDate)}`);
         const cd = countdownEl(best.depDate, best.depHome);
         if (cd) doEl.appendChild(cd);
@@ -885,6 +953,7 @@ function renderHero() {
         el.appendChild(heroEl('hero-train', `🚆 ${trainParts.join(' · ') || 'רכבת'}`));
         const metaParts = [`מ${homeShort}`, `מגיע ${best.arriveStation}`];
         if (carMin) metaParts.push(`🚕 ≈${carMin} דק׳`);
+        if (fare) metaParts.push(`≈₪${fare}`);
         el.appendChild(detail(metaParts.join(' · ')));
         const chips = transferChips(best);
         if (chips) el.appendChild(chips);
@@ -900,6 +969,7 @@ function renderHero() {
         }
         const more = moreBlock(moreChildren, moreChildren.length);
         if (more) el.appendChild(more);
+        el.appendChild(prefRow());
 
         // כפתור "אני על הרכבת" — פרסום מהיר שהרכבת שלי מגיעה (רק עבור רכבת של היום)
         if (best.depDate === todayYMD()) {
@@ -959,17 +1029,21 @@ function renderHero() {
       sig = 'from/none';
       render = () => { el.textContent = '🏠 אין מסלול זמין כרגע — נבדוק שוב בעדכון הבא'; };
     } else {
-      const best = state.homePlan.best;
-      const rows = heroStationRows(state.homePlan);
+      const ranked = rankOrBest(state.homePlan);
+      const best = ranked.chosen.o;
+      const rows = ranked.others;
       const homeShort = home.name.split(' - ')[0];
+      const fare = ranked.chosen.fare;
       const laterText = state.homePlan.next.slice(1, 3)
         .map((o) => `${o.arriveDate && o.arriveDate !== todayYMD() ? `${shortDay(o.arriveDate)} ` : ''}${o.arriveHome}`)
         .join(' · ');
-      sig = `from/${todayYMD()}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o)).join('-')}/${laterText}`;
+      sig = `from/${todayYMD()}/${pref}/${oSig(best)}/${rows.map((r) => r.key + oSig(r.o) + (r.fare ?? '')).join('-')}/${laterText}`;
       hasData = true;
       render = () => {
         el.appendChild(heroEl('hero-eyebrow', 'הכיוון שלי · הביתה'));
         el.appendChild(big(`🏠 בבית <span class="hero-time"><bdi>${best.arriveHome}</bdi></span> ${dayLabelHtml(best.arriveDate)}`));
+        const why = whyEl(ranked);
+        if (why) el.appendChild(why);
         const doEl = doLine(`צאו מגב-ים עד <b><bdi>${best.leaveBy}</bdi></b> ${dayLabelHtml(best.leaveByDate)}`);
         const cd = countdownEl(best.leaveByDate, best.leaveBy);
         if (cd) doEl.appendChild(cd);
@@ -979,7 +1053,7 @@ function renderHero() {
         if (best.towards) trainParts.push(`לכיוון ${esc(best.towards)}`);
         if (!transfersOf(best).length) trainParts.push('ישיר');
         el.appendChild(heroEl('hero-train', `🚆 ${trainParts.join(' · ')}`));
-        el.appendChild(detail(`מ${stationShort(best.stationKey)} אל ${homeShort}`));
+        el.appendChild(detail(`מ${stationShort(best.stationKey)} אל ${homeShort}` + (fare ? ` · ≈₪${fare}` : '')));
         const chips = transferChips(best);
         if (chips) el.appendChild(chips);
 
@@ -994,6 +1068,7 @@ function renderHero() {
         }
         const more = moreBlock(moreChildren, moreChildren.length);
         if (more) el.appendChild(more);
+        el.appendChild(prefRow());
       };
     }
   }
