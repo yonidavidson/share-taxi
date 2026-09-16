@@ -272,6 +272,28 @@ body {
 }
 .pref-chip.on { background: var(--c-yellow); color: var(--t-on-yellow); }
 .pref-chip:focus-visible { outline: 3px solid var(--c-yellow-2); outline-offset: 1px; }
+
+/* ---------- מצב "בדרך": ציר התקדמות ---------- */
+.journey { display: grid; gap: var(--sp-2); }
+.j-step {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: 2px var(--sp-2); align-items: start;
+  padding-top: var(--sp-2);
+  border-top: 2px dashed var(--c-paper-2);
+}
+.j-step:first-child { border-top: 0; padding-top: 0; }
+.j-dot { font-size: 14px; line-height: 1.3; }
+.j-main { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.j-sub { font-size: 12.5px; color: var(--t-paper-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.j-step.current .j-main { color: var(--t-paper-1); }
+.j-step.current .j-main::after {
+  content: "עכשיו"; display: inline-block; margin-inline-start: 6px;
+  background: var(--c-yellow); color: var(--t-on-yellow);
+  border: 2px solid #000; border-radius: var(--r-pill);
+  padding: 0 8px; font-size: 11.5px; font-weight: 800;
+}
+.j-step.done .j-main { color: var(--t-paper-2); text-decoration: line-through; text-decoration-thickness: 2px; }
+.j-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .hero-detail { font-size: 13.5px; color: var(--t-paper-2); font-weight: 600; }
 .hero-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .hero-chip {

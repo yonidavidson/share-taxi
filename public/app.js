@@ -880,6 +880,242 @@ function whyEl(ranked) {
   return s;
 }
 
+// ------------------------------------------------------------------
+// בדרך — מצב מסע: נועל את המסלול, מציג התקדמות, ומזהה מיקום (אופציונלי)
+// ------------------------------------------------------------------
+const JOURNEY_KEY = 'st_journey';
+const STATION_IDS = { raananaWest: 2940, raananaSouth: 2960, herzliya: 3500 };
+const GAV_YAM_COORD = { lat: 32.1942096, lon: 34.8824513 };
+let journey = null;
+try { journey = JSON.parse(localStorage.getItem(JOURNEY_KEY) || 'null'); } catch { journey = null; }
+if (!journey || !Array.isArray(journey.steps) || !journey.steps.length) journey = null;
+let coordCache = null;
+let geoPermitted = false;
+
+if (navigator.permissions?.query) {
+  navigator.permissions.query({ name: 'geolocation' })
+    .then((p) => {
+      geoPermitted = p.state === 'granted';
+      p.onchange = () => { geoPermitted = p.state === 'granted'; };
+    })
+    .catch(() => { /* לא נתמך */ });
+}
+
+async function loadCoords() {
+  if (coordCache) return coordCache;
+  try {
+    const { stations } = await fetch('/api/stations').then((r) => r.json());
+    coordCache = Object.fromEntries(
+      (stations ?? []).filter((s) => Number.isFinite(s.lat))
+        .map((s) => [s.id, { lat: s.lat, lon: s.lon }])
+    );
+  } catch { coordCache = {}; }
+  return coordCache;
+}
+
+function saveJourney() {
+  try { localStorage.setItem(JOURNEY_KEY, JSON.stringify(journey)); } catch { /* לא קריטי */ }
+}
+
+function clearJourney() {
+  journey = null;
+  try { localStorage.removeItem(JOURNEY_KEY); } catch { /* לא קריטי */ }
+  state.heroSig = null;
+  renderHero();
+}
+
+async function startJourney(ranked, dir) {
+  if (!ranked?.chosen) return;
+  const o = ranked.chosen.o;
+  const st = STATIONS.find((s) => s.key === o.stationKey);
+  const coords = await loadCoords();
+  const coordMap = { gav: GAV_YAM_COORD };
+  if (home?.id && coords[home.id]) coordMap[home.id] = coords[home.id];
+  const taxiId = o.stationKey ? STATION_IDS[o.stationKey] : null;
+  if (taxiId && coords[taxiId]) coordMap[taxiId] = coords[taxiId];
+  for (const t of transfersOf(o)) {
+    if (t.stationId && coords[t.stationId]) coordMap[t.stationId] = coords[t.stationId];
+  }
+  journey = {
+    id: String(Date.now().toString(36)),
+    dir,
+    homeName: home?.name ?? '',
+    homeId: home?.id ?? null,
+    steps: PlanningCore.buildJourney(o, dir, {
+      homeName: home?.name ?? '',
+      homeId: home?.id ?? null,
+      taxiStationName: st?.full ?? o.stationKey,
+      taxiStationKey: o.stationKey,
+      carMin: ranked.chosen.car?.min ?? 12,
+    }),
+    coordMap,
+    doneThrough: -1,
+    startedAt: Date.now(),
+  };
+  saveJourney();
+  state.heroSig = null;
+  renderHero();
+  toast('🚕 יוצאים לדרך — המסלול נעול');
+}
+
+function journeyTargetCoord(step) {
+  const cm = journey?.coordMap ?? {};
+  if (step.toId && cm[step.toId]) return cm[step.toId];
+  if (step.toKey) {
+    const id = STATION_IDS[step.toKey];
+    if (id && cm[id]) return cm[id];
+  }
+  if (step.toName === GAV_YAM) return cm.gav;
+  return null;
+}
+
+function advanceJourney(stepIndex) {
+  if (!journey) return;
+  journey.doneThrough = Math.max(journey.doneThrough, stepIndex);
+  saveJourney();
+  state.heroSig = null;
+  renderHero();
+}
+
+function checkJourneyLocation(manual = false) {
+  if (!journey || !navigator.geolocation) {
+    if (manual) toast('הדפדפן לא תומך במיקום');
+    return;
+  }
+  const st = PlanningCore.journeyState(journey.steps, Date.now(), journey.doneThrough);
+  const idx = st.states.findIndex((s) => s !== 'done');
+  if (idx < 0) return;
+  const step = journey.steps[idx];
+  const target = journeyTargetCoord(step);
+  if (!target) { if (manual) toast('אין מיקום ידוע לתחנת היעד'); return; }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      geoPermitted = true;
+      const here = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      const d = PlanningCore.distanceM(here, target);
+      if (d <= 450) {
+        advanceJourney(idx);
+        toast(`📍 הגעת ל${step.toName}`);
+      } else if (manual) {
+        toast(`📍 במרחק ≈${(d / 1000).toFixed(1)} ק״מ מ${step.toName}`);
+      }
+    },
+    (err) => {
+      if (manual) toast(err?.code === 1 ? 'אין הרשאת מיקום — אפשר לאשר בדפדפן' : 'לא הצלחנו לקבל מיקום');
+    },
+    { timeout: 8000, maximumAge: 60000 }
+  );
+}
+
+// בדיקת מיקום כל 60 שנ׳ כשהמסך גלוי (רק אם ההרשאה כבר אושרה)
+setInterval(() => {
+  if (!journey || document.visibilityState !== 'visible' || !geoPermitted) return;
+  checkJourneyLocation(false);
+}, 60000);
+
+// ניקוי אוטומטי אחרי זמן ההגעה
+setInterval(() => {
+  if (!journey) return;
+  const st = PlanningCore.journeyState(journey.steps, Date.now(), journey.doneThrough);
+  if (Number.isFinite(st.finishAt) && Date.now() > st.finishAt + 45 * 60000) {
+    clearJourney();
+    toast('✅ הנסיעה הסתיימה');
+  }
+}, 60000);
+
+// תצוגת מסע יציבה (לא מתעדכנת עם הזמן מלבד ספירה לאחור/מצבים)
+function journeyRender() {
+  if (!journey) return null;
+  const st = PlanningCore.journeyState(journey.steps, Date.now(), journey.doneThrough);
+  const finalStep = journey.steps[journey.steps.length - 1];
+  const finalIso = finalStep?.arriveAt ?? '';
+  const finalTime = finalIso.slice(11, 16);
+  const finalDay = finalIso.slice(0, 10) !== todayYMD() ? shortDay(finalIso.slice(0, 10)) : '';
+  const sig = `journey/${journey.id}/${journey.doneThrough}/${st.states.join(',')}/${Math.floor(Date.now() / 60000)}`;
+
+  const render = () => {
+    const el0 = $('#heroLine');
+    el0.appendChild(heroEl('hero-eyebrow',
+      journey.dir === 'from' ? '🏠 בדרך הביתה · המסלול נעול' : '🏢 בדרך לעבודה · המסלול נעול'));
+
+    const bigEl = big(
+      `${journey.dir === 'from' ? '🏠 בבית' : '🏢 בגב-ים'} ` +
+      `<span class="hero-time"><bdi>${finalTime}</bdi></span> ` +
+      (finalDay ? `<span class="hero-day">${finalDay}</span>` : '')
+    );
+    if (st.next && Number.isFinite(st.next.at)) {
+      const mins = Math.round((st.next.at - Date.now()) / 60000);
+      if (mins >= 0 && mins <= 180) {
+        const cd = document.createElement('span');
+        cd.className = 'hero-cd' + (mins <= 7 ? ' soon' : '');
+        cd.textContent = mins <= 1 ? 'עכשיו' : `בעוד ${mins} דק׳`;
+        bigEl.appendChild(cd);
+      }
+    }
+    el0.appendChild(bigEl);
+
+    const tl = document.createElement('div');
+    tl.className = 'journey';
+    journey.steps.forEach((s, i) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'j-step ' + st.states[i];
+      const dot = document.createElement('span');
+      dot.className = 'j-dot';
+      dot.textContent = st.states[i] === 'done' ? '✅' : st.states[i] === 'current' ? '👉' : '⏳';
+      rowEl.appendChild(dot);
+      const body = document.createElement('div');
+      const main = document.createElement('div');
+      main.className = 'j-main';
+      main.textContent = s.kind === 'train'
+        ? `🚆 רכבת ${s.train ?? ''} · ${s.fromName} ← ${s.toName}`
+        : `🚕 מונית · ${s.fromName} ← ${s.toName}`;
+      body.appendChild(main);
+      const sub = document.createElement('div');
+      sub.className = 'j-sub';
+      const bits = [];
+      const depT = (s.departAt ?? '').slice(11, 16);
+      const arrT = (s.arriveAt ?? '').slice(11, 16);
+      if (depT) bits.push(depT);
+      if (arrT) bits.push(arrT);
+      if (s.platform) bits.push(`רציף ${s.platform}`);
+      if (s.towards) bits.push(`לכיוון ${s.towards}`);
+      sub.textContent = bits.join(' · ');
+      body.appendChild(sub);
+      rowEl.appendChild(body);
+      tl.appendChild(rowEl);
+    });
+    el0.appendChild(tl);
+
+    const actions = document.createElement('div');
+    actions.className = 'j-actions';
+    if (navigator.geolocation) {
+      const locBtn = document.createElement('button');
+      locBtn.type = 'button';
+      locBtn.className = 'btn ghost sm';
+      locBtn.textContent = '📍 עדכון מיקום';
+      locBtn.addEventListener('click', () => checkJourneyLocation(true));
+      actions.appendChild(locBtn);
+    }
+    const nextIdx = st.states.findIndex((s) => s !== 'done');
+    if (nextIdx >= 0) {
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.className = 'btn ghost sm';
+      nextBtn.textContent = '⏭ הבא';
+      nextBtn.addEventListener('click', () => advanceJourney(nextIdx));
+      actions.appendChild(nextBtn);
+    }
+    const endBtn = document.createElement('button');
+    endBtn.type = 'button';
+    endBtn.className = 'btn ghost sm';
+    endBtn.textContent = 'סיים נסיעה';
+    endBtn.addEventListener('click', () => clearJourney());
+    actions.appendChild(endBtn);
+    el0.appendChild(actions);
+  };
+  return { sig, render };
+}
+
 // בורר העדפה קטן בתוך כרטיס הפנים
 function prefRow() {
   const wrap = document.createElement('div');
@@ -913,7 +1149,12 @@ function renderHero() {
   let render;
   let hasData = false;
 
-  if (state.dir === 'to') {
+  const jr = journeyRender();
+  if (jr) {
+    sig = jr.sig;
+    render = jr.render;
+    hasData = true;
+  } else if (state.dir === 'to') {
     if (!home) {
       sig = 'to/nohome';
       render = () => { el.textContent = '🏠 לחצו כאן לבחירת תחנת הבית — ונחשב את הדרך מהבית לעבודה'; };
@@ -969,6 +1210,12 @@ function renderHero() {
         }
         const more = moreBlock(moreChildren, moreChildren.length);
         if (more) el.appendChild(more);
+        const goBtn = document.createElement('button');
+        goBtn.type = 'button';
+        goBtn.className = 'btn primary sm hero-go';
+        goBtn.textContent = state.dir === 'from' ? '🚕 צא לדרך' : '🚆 צא לדרך';
+        goBtn.addEventListener('click', () => startJourney(ranked, state.dir));
+        el.appendChild(goBtn);
         el.appendChild(prefRow());
 
         // כפתור "אני על הרכבת" — פרסום מהיר שהרכבת שלי מגיעה (רק עבור רכבת של היום)
@@ -1068,6 +1315,12 @@ function renderHero() {
         }
         const more = moreBlock(moreChildren, moreChildren.length);
         if (more) el.appendChild(more);
+        const goBtn = document.createElement('button');
+        goBtn.type = 'button';
+        goBtn.className = 'btn primary sm hero-go';
+        goBtn.textContent = state.dir === 'from' ? '🚕 צא לדרך' : '🚆 צא לדרך';
+        goBtn.addEventListener('click', () => startJourney(ranked, state.dir));
+        el.appendChild(goBtn);
         el.appendChild(prefRow());
       };
     }

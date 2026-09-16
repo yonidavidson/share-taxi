@@ -556,7 +556,12 @@ async function getStations(env) {
 
   const stations = await railApi("/common/api/v1/stations?languageId=Hebrew&systemType=2");
   const list = (stations ?? [])
-    .map((s) => ({ id: s.stationId, name: String(s.stationName ?? "").trim() }))
+    .map((s) => ({
+      id: s.stationId,
+      name: String(s.stationName ?? "").trim(),
+      lat: Number.isFinite(s.location?.latitude) ? s.location.latitude : null,
+      lon: Number.isFinite(s.location?.lontitude) ? s.location.lontitude : null,
+    }))
     .filter((s) => Number.isInteger(s.id) && s.name)
     .sort((a, b) => a.name.localeCompare(b.name, "he"));
   if (list.length) {
