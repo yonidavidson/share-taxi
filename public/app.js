@@ -871,9 +871,10 @@ function whyEl(ranked) {
   s.className = 'hero-why';
   if (ranked.chosen.key === ranked.fastest.key) {
     const cheaperLater = ranked.cheapest && ranked.cheapest.key !== ranked.chosen.key;
+    const isCheapest = ranked.cheapest && ranked.cheapest.key === ranked.chosen.key;
     s.textContent = ranked.pref === 'cheap' && cheaperLater
       ? `⚡ מהיר · הזול מאחר ב-${Math.max(1, Math.round((ranked.cheapest.arrival - ranked.chosen.arrival) / 60000))} דק׳`
-      : '⚡ הכי מהיר';
+      : (ranked.pref === 'cheap' && isCheapest ? '💰 הזול והמהיר' : '⚡ הכי מהיר');
   } else {
     s.textContent = '💰 הזול מבין המהירים' + (ranked.savings >= 5 ? ` · חוסך ≈₪${ranked.savings}` : '');
   }
