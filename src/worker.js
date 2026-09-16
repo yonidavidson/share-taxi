@@ -32,7 +32,7 @@ const CAR_ESTIMATES = {
 };
 const INFO_TTL_MS = 2 * 60 * 1000; // הגשת מטמון טרי עד 2 דקות
 const INFO_STALE_TTL_S = 60 * 60; // שמירת מטמון לגיבוי (stale-while-error)
-const STATIONS_CACHE_KEY = "stations_cache_v1";
+const STATIONS_CACHE_KEY = "stations_cache_v2"; // v2: כולל קואורדינטות לזיהוי מיקום
 const STATIONS_CACHE_TTL_S = 24 * 60 * 60; // רשימת התחנות משתנה לעיתים רחוקות
 const HOME_CACHE_PREFIX = "home_cache_v1_";
 const HOME_CACHE_TTL_MS = 3 * 60 * 1000; // תוכנית הביתה מתרעננת כל 3 דקות
